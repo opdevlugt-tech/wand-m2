@@ -227,6 +227,21 @@ describe('partition split', () => {
     }
   });
 
+  it('split by path mid-wall to mid-wall splits room in two', () => {
+    // square 0..100; top mid → bottom mid
+    const path = [
+      { x: 50, y: 0 },
+      { x: 50, y: 100 },
+    ];
+    const split = splitPolygonByPath(square, path);
+    expect(split).not.toBeNull();
+    const a1 = polygonAreaM2(split!.loopA, 1);
+    const a2 = polygonAreaM2(split!.loopB, 1);
+    expect(a1 + a2).toBeCloseTo(10000, 0);
+    expect(a1).toBeGreaterThan(1000);
+    expect(a2).toBeGreaterThan(1000);
+  });
+
   it('split by path with middle corner preserves area', () => {
     const path = [
       { x: 50, y: 0 },

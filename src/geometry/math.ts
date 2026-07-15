@@ -1014,12 +1014,12 @@ export function splitPolygonByPartition(
   if (polygonSelfIntersects(loopA, true) || polygonSelfIntersects(loopB, true)) return null;
   return { loopA, loopB };
 }
-
-/** Map a boundary point to nearest wall index + t. */
+/** Map a point to nearest wall index + t. maxDist in world px (default generous). */
 export function pointToWallParam(
   vertices: Point[],
   p: Point,
-): { wallIndex: number; t: number } | null {
+  maxDist = 28,
+): { wallIndex: number; t: number; d: number } | null {
   const segs = wallSegments(vertices, true);
   let best: { wallIndex: number; t: number; d: number } | null = null;
   for (let i = 0; i < segs.length; i++) {
@@ -1027,8 +1027,44 @@ export function pointToWallParam(
     const t = projectTOnSegment(p, segs[i].a, segs[i].b);
     if (!best || d < best.d) best = { wallIndex: i, t, d };
   }
-  if (!best || best.d > 2) return null;
-  return { wallIndex: best.wallIndex, t: best.t };
+  if (!best || best.d > maxDist) return null;
+  return best;
+}
+
+/** First intersection of ray origin→dir with polygon boundary (excluding near origin). */
+export function rayHitPolygonBoundary(
+  origin: Point,
+  dirRad: number,
+  vertices: Point[],
+  minT = 4,
+  maxT = 1e6,
+): { point: Point; wallIndex: number; tOnWall: number; dist: number } | null {
+  const ux = Math.cos(dirRad);
+  const uy = Math.sin(dirRad);
+  const segs = wallSegments(vertices, true);
+  let best: { point: Point; wallIndex: number; tOnWall: number; dist: number } | null = null;
+
+  for (let i = 0; i < segs.length; i++) {
+    const { a, b } = segs[i];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    // origin + t * u = a + s * edge
+    const rx = a.x - origin.x;
+    const ry = a.y - origin.y;
+    const den = ux * dy - uy * dx;
+    if (Math.abs(den) < 1e-12) continue;
+    const t = (rx * dy - ry * dx) / den;
+    const s = (rx * uy - ry * ux) / den;
+    if (t < minT || t > maxT) continue;
+    if (s < -0.02 || s > 1.02) continue;
+    const sc = Math.max(0, Math.min(1, s));
+    const point = { x: a.x + dx * sc, y: a.y + dy * sc };
+    if (dist(point, origin) < minT) continue;
+    if (!best || t < best.dist) {
+      best = { point, wallIndex: i, tOnWall: sc, dist: t };
+    }
+  }
+  return best;
 }
 
 /**
@@ -1229,11 +1265,14 @@ export function splitPolygonByPath(
   path: Point[],
 ): { loopA: Point[]; loopB: Point[] } | null {
   if (path.length < 2 || vertices.length < 3) return null;
-  const start = pointToWallParam(vertices, path[0]);
-  const end = pointToWallParam(vertices, path[path.length - 1]);
+  // Generous: endpoints are often exactly on walls after snap
+  const start = pointToWallParam(vertices, path[0], 40);
+  const end = pointToWallParam(vertices, path[path.length - 1], 40);
   if (!start || !end) return null;
+  if (start.wallIndex === end.wallIndex && Math.abs(start.t - end.t) < 0.02) {
+    return null;
+  }
 
-  // Build expanded ring with start/end points (reuse partition insert logic)
   const split = splitPolygonByPartition(
     vertices,
     start.wallIndex,
@@ -1243,45 +1282,25 @@ export function splitPolygonByPath(
   );
   if (!split) return null;
 
-  // If path is just two points, done
   if (path.length === 2) return split;
 
-  // Replace the direct partition edge with the polyline corners.
-  // loopA walks start→end along boundary: last edge is end→start (partition).
-  // Insert path intermediates before closing.
   const middles = path.slice(1, -1).map((p) => ({ ...p }));
   if (!middles.length) return split;
 
   const inject = (loop: Point[], reverseMids: boolean): Point[] => {
-    // loop is [start, ...boundary..., end] without repeating start
-    // We need [start, ...mids..., end, ...boundary rest already there]
-    // Actually split loops are [A ... B] where partition is B→A when closed.
-    // So vertices = [A, boundary to B..., B]; closed wall last→first is B→A.
-    // Want B→A to become B→ reverse(mids) → A or A→ mids → B.
-    // For loopA = walk(A→B along boundary): partition edge is from B back to A.
-    // Path was A→mids→B, so from B to A along path is reverse(mids).
-    // New verts: [A, ...boundary..., B, ...reverse(mids)...] without duplicating A at end.
     if (loop.length < 2) return loop;
     const m = reverseMids ? [...middles].reverse() : [...middles];
     return [...loop, ...m];
   };
 
-  // loopA: A..B on boundary, partition B→A via reverse path
-  // loopB: B..A on boundary, partition A→B via path
-  // After inject: loopA = [A..B, rev mids], closed B→rev→A ✓
-  // loopB from walk(B,A) = [B..A]; inject mids not reverse: [B..A, mids] closed A→mids→B wrong order
-  // For loopB we need [B, mids reversed? Path A→mids→B means from A to B is mids, from B to A is reverse.
-  // loopB walk B to A: verts [B ... A], partition A→B should be A→mids→B so inject mids at end: [B...A, mids] closes A→mids→...→B? last mid to B: need mids then B is first. So [B, ...mids reverse from B side]
-  // Path: A, m1, m2, B. From A to B: m1,m2. From B to A: m2,m1.
-  // loopA [A..B] + [m2,m1] → A..B,m2,m1 close m1→A — wrong, need B→m2→m1→A so [A..B, m2, m1] close last m1 to A. Path reverse from B is m2,m1 yes B→m2→m1→A if m1 near A. Good.
-  // loopB [B..A] + [m1,m2] → B..A,m1,m2 close m2→B. From A along m1,m2 to B: A→m1→m2→B. Good.
-
   const loopA = inject(split.loopA, true);
   const loopB = inject(split.loopB, false);
 
   if (loopA.length < 3 || loopB.length < 3) return null;
-  if (polygonSelfIntersects(loopA, true) || polygonSelfIntersects(loopB, true)) return null;
-  // areas should be positive and sum roughly original
+  if (polygonSelfIntersects(loopA, true) || polygonSelfIntersects(loopB, true)) {
+    // Fall back to straight chord if polyline self-intersects
+    return split;
+  }
   return { loopA, loopB };
 }
 

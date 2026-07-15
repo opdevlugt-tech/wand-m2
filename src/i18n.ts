@@ -88,7 +88,7 @@ export const translations: Record<Lang, Dict> = {
     statusDoor: (w) => `Deur ${w} · sleep om te verplaatsen · typ breedte`,
     statusIdle: 'Klaar. Selecteer kamer · type · Deel… of ✂ Teken.',
     statusPartitionDraw:
-      '✂ Scheiding: muur → rechte/45°/90°-lijnen (snapt) · optioneel knikken · andere muur. Esc = stop. Geen auto-deuren.',
+      '✂ Deel kamer: 1) klik op wand 2) sleep rechte/45°/90° naar overkant 3) klik op die wand → 2 kamers. Esc = stop.',
     wallM: 'Muur (m)',
     doorM: 'Deur (m)',
     addDoor: '+ Deur',

@@ -18,6 +18,7 @@ import {
   pointInPolygon,
   pointToWallParam,
   pointOnSegment,
+  rayHitPolygonBoundary,
   splitIntoEqualParts,
   splitPolygonByPath,
   moveNextForCornerAngle,
@@ -814,7 +815,7 @@ export class DrawingController {
     this.cfg.onChange();
   };
 
-  /** Snap partition draft: boundary magnet, else 0/45/90° (world or t.o.v. vorige lijn). */
+  /** Snap partition draft: 0/45/90°, lock onto opposite walls; don't stick to start wall. */
   private snapPartitionDraft(raw: Point): Point {
     const li = this.model.partitionLoopIndex;
     const path = this.model.partitionPath;
@@ -822,21 +823,13 @@ export class DrawingController {
     const loop = this.model.loops[li];
     if (!loop) return raw;
 
-    const hit = this.worldHitRadius() * 1.4;
-    const onBoundary = pointToWallParam(loop.vertices, raw);
-    if (onBoundary) {
-      const segs = wallSegments(loop.vertices, true);
-      const seg = segs[onBoundary.wallIndex];
-      const pt = pointOnSegment(seg.a, seg.b, onBoundary.t);
-      if (dist(raw, pt) <= hit) return pt;
-    }
-
+    const start = path[0];
     const last = path[path.length - 1];
+    const magnet = Math.max(18, this.worldHitRadius() * 1.8);
+    const startWall = pointToWallParam(loop.vertices, start, 12);
+
     const desired = angleOf(last, raw);
     const len = Math.max(dist(last, raw), 1);
-
-    // Eerste segment: absoluut 0/45/90/… t.o.v. scherm-assen
-    // Volgende: relatief 0/±45/±90 t.o.v. vorige scheidingslijn (rechte / knik)
     let dir: number;
     if (path.length >= 2) {
       const prev = path[path.length - 2];
@@ -844,7 +837,117 @@ export class DrawingController {
     } else {
       dir = snapWorldAngle(desired, 45);
     }
+
+    // Ray to next wall(s) along snapped direction — primary way to end on a wall
+    const ray = rayHitPolygonBoundary(last, dir, loop.vertices, 10, 20000);
+    if (ray && dist(ray.point, start) > magnet) {
+      const along = dist(last, raw);
+      // Stick when cursor is near or past the hit
+      if (along >= ray.dist - magnet) {
+        return { ...ray.point };
+      }
+    }
+
+    // Direct magnet only if clearly on a *different* wall (not start wall / near start)
+    const onWall = pointToWallParam(loop.vertices, raw, magnet);
+    if (onWall) {
+      const segs = wallSegments(loop.vertices, true);
+      const pt = pointOnSegment(segs[onWall.wallIndex].a, segs[onWall.wallIndex].b, onWall.t);
+      const farFromStart = dist(pt, start) > magnet * 1.25;
+      const differentWall =
+        !startWall ||
+        onWall.wallIndex !== startWall.wallIndex ||
+        Math.abs(onWall.t - startWall.t) > 0.08;
+      if (farFromStart && differentWall) {
+        return pt;
+      }
+    }
+
+    // Free 45°/90° segment inside the room
     return pointFromPolar(last, dir, len);
+  }
+
+  private snapPointToLoopWall(
+    loopVerts: Point[],
+    p: Point,
+    magnet: number,
+  ): Point | null {
+    const on = pointToWallParam(loopVerts, p, magnet);
+    if (!on) return null;
+    const segs = wallSegments(loopVerts, true);
+    return pointOnSegment(segs[on.wallIndex].a, segs[on.wallIndex].b, on.t);
+  }
+
+  /** True if point lies on a wall other than the partition start (or far along same wall). */
+  private isPartitionEndOnWall(
+    loopVerts: Point[],
+    p: Point,
+    start: Point,
+    magnet: number,
+  ): Point | null {
+    const on = pointToWallParam(loopVerts, p, magnet);
+    if (!on) return null;
+    const segs = wallSegments(loopVerts, true);
+    const pt = pointOnSegment(segs[on.wallIndex].a, segs[on.wallIndex].b, on.t);
+    if (dist(pt, start) < Math.max(16, magnet * 0.75)) return null;
+    const startOn = pointToWallParam(loopVerts, start, 12);
+    if (
+      startOn &&
+      startOn.wallIndex === on.wallIndex &&
+      Math.abs(startOn.t - on.t) < 0.05
+    ) {
+      return null;
+    }
+    return pt;
+  }
+
+  private commitPartitionPath(loopIndex: number, fullPath: Point[]): boolean {
+    const loop = this.model.loops[loopIndex];
+    if (!loop || fullPath.length < 2) return false;
+    // Ensure endpoints project onto walls with generous tolerance
+    const a = this.snapPointToLoopWall(loop.vertices, fullPath[0], 40);
+    const b = this.snapPointToLoopWall(
+      loop.vertices,
+      fullPath[fullPath.length - 1],
+      40,
+    );
+    if (!a || !b) return false;
+    const path = [a, ...fullPath.slice(1, -1), b];
+    const result = splitPolygonByPath(loop.vertices, path);
+    if (!result) return false;
+    if (result.loopA.length < 3 || result.loopB.length < 3) return false;
+
+    const loopA: Loop = {
+      id: newLoopId(),
+      vertices: result.loopA,
+      doors: [],
+      roomTypeId: loop.roomTypeId ?? ROOM_CONFIG.defaultTypeId,
+      name: null,
+    };
+    const loopB: Loop = {
+      id: newLoopId(),
+      vertices: result.loopB,
+      doors: [],
+      roomTypeId: ROOM_CONFIG.defaultTypeId,
+      name: null,
+    };
+    const loops = [
+      ...this.model.loops.slice(0, loopIndex),
+      loopA,
+      loopB,
+      ...this.model.loops.slice(loopIndex + 1),
+    ];
+    this.model = {
+      ...this.model,
+      loops,
+      status: 'idle',
+      partitionPath: null,
+      partitionLoopIndex: null,
+      draftEnd: null,
+    };
+    this.setSelection({ kind: 'wall', loopIndex, wallIndex: 0 }, true, false);
+    this.cfg.onChange();
+    return true;
   }
 
   private moveDraggedWall(p: Point): void {
@@ -1024,162 +1127,53 @@ export class DrawingController {
     const loop = this.model.loops[li];
     if (!loop) return;
     const path = [...(this.model.partitionPath ?? [])];
-    const hit = this.worldHitRadius() * 1.4;
-    const onBoundary = pointToWallParam(loop.vertices, p);
-    const snapBoundary =
-      onBoundary &&
-      dist(
-        p,
-        pointOnSegment(
-          loop.vertices[onBoundary.wallIndex],
-          loop.vertices[(onBoundary.wallIndex + 1) % loop.vertices.length],
-          onBoundary.t,
-        ),
-      ) <= hit;
+    const magnet = Math.max(22, this.worldHitRadius() * 2);
 
+    // Start: must begin on an existing wall of this room
     if (path.length === 0) {
-      if (!snapBoundary || !onBoundary) {
+      const start = this.snapPointToLoopWall(loop.vertices, p, magnet);
+      if (!start) {
         this.cfg.onReject();
         return;
       }
-      const segs = wallSegments(loop.vertices, true);
-      const seg = segs[onBoundary.wallIndex];
-      const pt = {
-        x: seg.a.x + (seg.b.x - seg.a.x) * onBoundary.t,
-        y: seg.a.y + (seg.b.y - seg.a.y) * onBoundary.t,
-      };
       this.model = {
         ...this.model,
-        partitionPath: [pt],
+        partitionPath: [start],
         draftEnd: null,
       };
       this.cfg.onChange();
       return;
     }
 
-    // Closing: second boundary hit (different from first)
-    if (snapBoundary && onBoundary && path.length >= 1) {
-      const segs = wallSegments(loop.vertices, true);
-      const seg = segs[onBoundary.wallIndex];
-      const pt = {
-        x: seg.a.x + (seg.b.x - seg.a.x) * onBoundary.t,
-        y: seg.a.y + (seg.b.y - seg.a.y) * onBoundary.t,
-      };
-      if (dist(pt, path[0]) < hit * 1.5 && path.length < 2) {
+    const start = path[0];
+    const snapped = this.snapPartitionDraft(p);
+
+    // Finish if draft locked onto a different existing wall
+    const endPt =
+      this.isPartitionEndOnWall(loop.vertices, snapped, start, magnet + 6) ??
+      this.isPartitionEndOnWall(loop.vertices, p, start, magnet);
+
+    if (endPt) {
+      const full = [...path, endPt];
+      if (!this.commitPartitionPath(li, full)) {
         this.cfg.onReject();
-        return;
       }
-      // If only one point so far, need at least end on other wall
-      if (path.length === 1 && dist(pt, path[0]) < 8) {
-        this.cfg.onReject();
-        return;
-      }
-      const full = [...path, pt];
-      const result = splitPolygonByPath(loop.vertices, full);
-      if (!result) {
-        this.cfg.onReject();
-        return;
-      }
-      const loopA: Loop = {
-        id: newLoopId(),
-        vertices: result.loopA,
-        doors: [],
-        roomTypeId: loop.roomTypeId ?? ROOM_CONFIG.defaultTypeId,
-        name: null,
-      };
-      const loopB: Loop = {
-        id: newLoopId(),
-        vertices: result.loopB,
-        doors: [],
-        roomTypeId: ROOM_CONFIG.defaultTypeId,
-        name: null,
-      };
-      // redistribute original doors roughly: keep on loop that contains wall midpoint
-      const loops = [
-        ...this.model.loops.slice(0, li),
-        loopA,
-        loopB,
-        ...this.model.loops.slice(li + 1),
-      ];
-      this.model = {
-        ...this.model,
-        loops,
-        status: 'idle',
-        partitionPath: null,
-        partitionLoopIndex: null,
-        draftEnd: null,
-      };
-      this.setSelection({ kind: 'wall', loopIndex: li, wallIndex: 0 }, true, false);
-      this.cfg.onChange();
       return;
     }
 
-    // Intermediate corner: prefer inside polygon, snap 45°
-    if (!pointInPolygon(p, loop.vertices) && !snapBoundary) {
+    // Intermediate corner: must be inside room
+    const inside =
+      pointInPolygon(snapped, loop.vertices) || pointInPolygon(p, loop.vertices);
+    if (!inside) {
       this.cfg.onReject();
       return;
     }
-    const corner = this.snapPartitionDraft(p);
-    // If snap landed on boundary and we already have points, treat as close
-    const cornerOnB = pointToWallParam(loop.vertices, corner);
-    if (
-      cornerOnB &&
-      dist(
-        corner,
-        pointOnSegment(
-          loop.vertices[cornerOnB.wallIndex],
-          loop.vertices[(cornerOnB.wallIndex + 1) % loop.vertices.length],
-          cornerOnB.t,
-        ),
-      ) <= hit &&
-      path.length >= 1
-    ) {
-      // re-enter as boundary close via recursion path — push then finish
-      const segs = wallSegments(loop.vertices, true);
-      const seg = segs[cornerOnB.wallIndex];
-      const pt = {
-        x: seg.a.x + (seg.b.x - seg.a.x) * cornerOnB.t,
-        y: seg.a.y + (seg.b.y - seg.a.y) * cornerOnB.t,
-      };
-      if (dist(pt, path[0]) >= 8) {
-        const full = [...path, pt];
-        const result = splitPolygonByPath(loop.vertices, full);
-        if (result) {
-          const loopA: Loop = {
-            id: newLoopId(),
-            vertices: result.loopA,
-            doors: [],
-            roomTypeId: loop.roomTypeId ?? ROOM_CONFIG.defaultTypeId,
-            name: null,
-          };
-          const loopB: Loop = {
-            id: newLoopId(),
-            vertices: result.loopB,
-            doors: [],
-            roomTypeId: ROOM_CONFIG.defaultTypeId,
-            name: null,
-          };
-          const loops = [
-            ...this.model.loops.slice(0, li),
-            loopA,
-            loopB,
-            ...this.model.loops.slice(li + 1),
-          ];
-          this.model = {
-            ...this.model,
-            loops,
-            status: 'idle',
-            partitionPath: null,
-            partitionLoopIndex: null,
-            draftEnd: null,
-          };
-          this.setSelection({ kind: 'wall', loopIndex: li, wallIndex: 0 }, true, false);
-          this.cfg.onChange();
-          return;
-        }
-      }
+    // Don't place a "corner" still stuck on the start wall
+    if (dist(snapped, start) < 12) {
+      this.cfg.onReject();
+      return;
     }
-    path.push({ ...corner });
+    path.push({ ...snapped });
     this.model = { ...this.model, partitionPath: path, draftEnd: null };
     this.cfg.onChange();
   }
