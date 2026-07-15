@@ -36,7 +36,15 @@ export type RenderOptions = {
   /** Partition candidates while choosing split */
   partitionOptions?: { a: { x: number; y: number }; b: { x: number; y: number }; label: string }[];
   partitionHoverIndex?: number | null;
+  /** Zoom/pan: geometry in world; view is visual only (meters unchanged). */
+  view?: { scale: number; ox: number; oy: number };
 };
+
+/** Screen-constant line width under zoom */
+let drawScale = 1;
+function lw(w: number): number {
+  return w / Math.max(0.25, drawScale);
+}
 
 const COLORS = {
   bg: '#0f1419',
@@ -91,11 +99,22 @@ export function drawScene(
   model: DrawingModel,
   opts: RenderOptions,
 ): void {
+  const view = opts.view ?? { scale: 1, ox: 0, oy: 0 };
+  drawScale = view.scale;
+
   ctx.clearRect(0, 0, cssW, cssH);
   ctx.fillStyle = COLORS.bg;
   ctx.fillRect(0, 0, cssW, cssH);
 
-  drawGrid(ctx, cssW, cssH, opts.pxPerMeter);
+  ctx.save();
+  ctx.translate(view.ox, view.oy);
+  ctx.scale(view.scale, view.scale);
+
+  const x0 = -view.ox / view.scale;
+  const y0 = -view.oy / view.scale;
+  const x1 = (cssW - view.ox) / view.scale;
+  const y1 = (cssH - view.oy) / view.scale;
+  drawGridWorld(ctx, x0, y0, x1, y1, opts.pxPerMeter);
 
   const loops = model.loops ?? [];
   const activeVerts = model.vertices ?? [];
@@ -155,8 +174,9 @@ export function drawScene(
   // draft
   if (draftEnd && activeVerts.length > 0) {
     const last = activeVerts[activeVerts.length - 1];
+    const hitWorld = opts.hitRadius / Math.max(0.25, view.scale);
     const closing =
-      activeVerts.length >= 3 && nearPoint(draftEnd, activeVerts[0], opts.hitRadius * 1.5);
+      activeVerts.length >= 3 && nearPoint(draftEnd, activeVerts[0], hitWorld * 1.5);
     const color = opts.rejectFlash ? COLORS.draftBad : closing ? COLORS.first : COLORS.draft;
     strokeSeg(ctx, last, draftEnd, color, 2, true);
     if (dist(last, draftEnd) > 4) {
@@ -190,9 +210,9 @@ export function drawScene(
     }
     if (closing) {
       ctx.beginPath();
-      ctx.arc(activeVerts[0].x, activeVerts[0].y, opts.hitRadius, 0, Math.PI * 2);
+      ctx.arc(activeVerts[0].x, activeVerts[0].y, hitWorld, 0, Math.PI * 2);
       ctx.strokeStyle = COLORS.first;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = lw(2);
       ctx.stroke();
     }
   }
@@ -221,6 +241,8 @@ export function drawScene(
       drawVertex(ctx, p.b, COLORS.doorSel, 5);
     }
   }
+
+  ctx.restore();
 }
 
 function drawClosedLoop(
@@ -332,7 +354,7 @@ function drawDoor(
   ctx.beginPath();
   ctx.arc(hinge.x, hinge.y, r, Math.min(start, end), Math.max(start, end));
   ctx.strokeStyle = selected ? COLORS.doorSel : COLORS.doorSwing;
-  ctx.lineWidth = selected ? 2 : 1.5;
+  ctx.lineWidth = selected ? lw(2) : lw(1.5);
   ctx.setLineDash([4, 3]);
   ctx.stroke();
   ctx.setLineDash([]);
@@ -378,7 +400,7 @@ function drawInteriorCorner(
       : COLORS.interiorFill;
   ctx.fill();
   ctx.strokeStyle = bad ? COLORS.angleBadStroke : COLORS.interior;
-  ctx.lineWidth = bad ? 2 : 1.5;
+  ctx.lineWidth = bad ? lw(2) : lw(1.5);
   ctx.stroke();
 
   const midIn = {
@@ -403,11 +425,13 @@ function drawAngleChip(
   interior: boolean,
   bad: boolean,
 ): void {
-  ctx.font = bad ? '700 11px system-ui, sans-serif' : '600 10px system-ui, sans-serif';
+  ctx.font = bad
+    ? `700 ${lw(11)}px system-ui, sans-serif`
+    : `600 ${lw(10)}px system-ui, sans-serif`;
   const tw = ctx.measureText(text).width;
-  const pad = 4;
+  const pad = lw(4);
   ctx.fillStyle = bad ? COLORS.angleBadBg : COLORS.labelBg;
-  ctx.fillRect(x - tw / 2 - pad, y - 8, tw + pad * 2, 16);
+  ctx.fillRect(x - tw / 2 - pad, y - lw(8), tw + pad * 2, lw(16));
   ctx.fillStyle = bad ? COLORS.angleBad : interior ? COLORS.interior : COLORS.exterior;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -415,38 +439,43 @@ function drawAngleChip(
 }
 
 function drawTinyTag(ctx: CanvasRenderingContext2D, x: number, y: number, text: string): void {
-  ctx.font = '600 10px system-ui, sans-serif';
+  ctx.font = `600 ${lw(10)}px system-ui, sans-serif`;
   const tw = ctx.measureText(text).width;
   ctx.fillStyle = COLORS.labelBg;
-  ctx.fillRect(x - tw / 2 - 3, y - 7, tw + 6, 14);
+  ctx.fillRect(x - tw / 2 - lw(3), y - lw(7), tw + lw(6), lw(14));
   ctx.fillStyle = COLORS.draft;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, x, y);
 }
 
-function drawGrid(
+function drawGridWorld(
   ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
   pxPerMeter: number,
 ): void {
   const step = pxPerMeter;
-  ctx.lineWidth = 1;
-  for (let x = 0; x <= w; x += step / 2) {
-    const major = Math.round(x / step) * step === x;
+  const half = step / 2;
+  const startX = Math.floor(x0 / half) * half;
+  const startY = Math.floor(y0 / half) * half;
+  ctx.lineWidth = lw(1);
+  for (let x = startX; x <= x1; x += half) {
+    const major = Math.abs(Math.round(x / step) * step - x) < 1e-6;
     ctx.strokeStyle = major ? COLORS.gridMajor : COLORS.grid;
     ctx.beginPath();
-    ctx.moveTo(x + 0.5, 0);
-    ctx.lineTo(x + 0.5, h);
+    ctx.moveTo(x, y0);
+    ctx.lineTo(x, y1);
     ctx.stroke();
   }
-  for (let y = 0; y <= h; y += step / 2) {
-    const major = Math.round(y / step) * step === y;
+  for (let y = startY; y <= y1; y += half) {
+    const major = Math.abs(Math.round(y / step) * step - y) < 1e-6;
     ctx.strokeStyle = major ? COLORS.gridMajor : COLORS.grid;
     ctx.beginPath();
-    ctx.moveTo(0, y + 0.5);
-    ctx.lineTo(w, y + 0.5);
+    ctx.moveTo(x0, y);
+    ctx.lineTo(x1, y);
     ctx.stroke();
   }
 }
@@ -463,9 +492,9 @@ function strokeSeg(
   ctx.moveTo(a.x, a.y);
   ctx.lineTo(b.x, b.y);
   ctx.strokeStyle = color;
-  ctx.lineWidth = width;
+  ctx.lineWidth = lw(width);
   ctx.lineCap = 'round';
-  ctx.setLineDash(dashed ? [8, 6] : []);
+  ctx.setLineDash(dashed ? [lw(8), lw(6)] : []);
   ctx.stroke();
   ctx.setLineDash([]);
 }
@@ -477,11 +506,11 @@ function drawVertex(
   r: number,
 ): void {
   ctx.beginPath();
-  ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+  ctx.arc(p.x, p.y, lw(r), 0, Math.PI * 2);
   ctx.fillStyle = color;
   ctx.fill();
   ctx.strokeStyle = COLORS.bg;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = lw(1.5);
   ctx.stroke();
 }
 
@@ -500,13 +529,16 @@ function drawLengthLabel(
   const ox = Math.sin(ang) * 14;
   const oy = -Math.cos(ang) * 14;
   const text = formatMeters(m);
-  ctx.font = live || selected ? '600 12px system-ui, sans-serif' : '500 12px system-ui, sans-serif';
+  ctx.font =
+    live || selected
+      ? `600 ${lw(12)}px system-ui, sans-serif`
+      : `500 ${lw(12)}px system-ui, sans-serif`;
   const tw = ctx.measureText(text).width;
-  const pad = 4;
+  const pad = lw(4);
   const x = c.x + ox;
   const y = c.y + oy;
   ctx.fillStyle = selected ? COLORS.labelSelectedBg : COLORS.labelBg;
-  ctx.fillRect(x - tw / 2 - pad, y - 9, tw + pad * 2, 18);
+  ctx.fillRect(x - tw / 2 - pad, y - lw(9), tw + pad * 2, lw(18));
   ctx.fillStyle = live ? COLORS.draft : selected ? COLORS.labelSelected : COLORS.label;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -514,14 +546,14 @@ function drawLengthLabel(
 }
 
 function drawBadge(ctx: CanvasRenderingContext2D, x: number, y: number, text: string): void {
-  ctx.font = '700 16px system-ui, sans-serif';
+  ctx.font = `700 ${lw(16)}px system-ui, sans-serif`;
   const tw = ctx.measureText(text).width;
-  const padX = 12;
+  const padX = lw(12);
   ctx.fillStyle = 'rgba(15, 20, 25, 0.85)';
   ctx.strokeStyle = COLORS.first;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = lw(1.5);
   const w = tw + padX * 2;
-  const h = 28;
+  const h = lw(28);
   roundRect(ctx, x - w / 2, y - h / 2, w, h, 8);
   ctx.fill();
   ctx.stroke();

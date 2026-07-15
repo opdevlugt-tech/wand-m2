@@ -33,6 +33,8 @@ export type InteractionConfig = {
   closeRadius: number;
   minLengthPx: number;
   getPxPerMeter: () => number;
+  /** View transform for screen↔world (zoom/pan). Defaults to identity. */
+  getView?: () => { scale: number; ox: number; oy: number };
   onChange: () => void;
   onReject: () => void;
   onWallSelected?: (sel: Selection, focusInput: boolean) => void;
@@ -447,9 +449,14 @@ export class DrawingController {
     const segs = wallSegments(loop.vertices, true);
     const seg = segs[d.wallIndex];
     if (!seg) return false;
-    const t = projectTOnSegment(p, seg.a, seg.b);
-    const g = doorGeometry(seg.a, seg.b, t, d.widthM, this.cfg.getPxPerMeter());
-    if (!g) return false;
+    const L = dist(seg.a, seg.b);
+    if (L < 1) return false;
+    const ppm = this.cfg.getPxPerMeter();
+    const half = (d.widthM * ppm) / 2;
+    const margin = 4;
+    const halfT = Math.min(0.45, (half + margin) / L);
+    let t = projectTOnSegment(p, seg.a, seg.b);
+    t = Math.max(halfT, Math.min(1 - halfT, t));
     this.writeLoop(loopIndex, {
       doors: loop.doors.map((x) => (x.id === doorId ? { ...x, t } : x)),
     });
@@ -500,34 +507,52 @@ export class DrawingController {
 
   private localPoint(e: PointerEvent): Point {
     const rect = this.canvas.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const v = this.cfg.getView?.() ?? { scale: 1, ox: 0, oy: 0 };
+    return {
+      x: (sx - v.ox) / v.scale,
+      y: (sy - v.oy) / v.scale,
+    };
+  }
+
+  private worldHitRadius(): number {
+    const scale = this.cfg.getView?.().scale ?? 1;
+    return this.cfg.hitRadius / Math.max(0.25, scale);
+  }
+
+  private worldCloseRadius(): number {
+    const scale = this.cfg.getView?.().scale ?? 1;
+    return this.cfg.closeRadius / Math.max(0.25, scale);
   }
 
   /** Hit-test committed loops then active chain. */
   private hitTestAll(p: Point): Selection {
     const ppm = this.cfg.getPxPerMeter();
+    const hit = this.worldHitRadius();
     for (let li = this.model.loops.length - 1; li >= 0; li--) {
       const loop = this.model.loops[li];
       const doors = loop.doors ?? [];
-      const doorId = hitTestDoor(p, loop.vertices, doors, ppm, this.cfg.hitRadius * 1.2);
+      // Generous door hit so drag is easy
+      const doorId = hitTestDoor(p, loop.vertices, doors, ppm, hit * 1.8);
       if (doorId) {
         return { kind: 'door', loopIndex: li, doorId };
       }
-      const vHit = hitTestVertex(p, loop.vertices, this.cfg.hitRadius);
+      const vHit = hitTestVertex(p, loop.vertices, hit);
       if (vHit !== null) {
         return { kind: 'vertex', loopIndex: li, vertexIndex: vHit };
       }
-      const wHit = hitTestWall(p, loop.vertices, true, this.cfg.hitRadius);
+      const wHit = hitTestWall(p, loop.vertices, true, hit);
       if (wHit !== null) {
         return { kind: 'wall', loopIndex: li, wallIndex: wHit };
       }
     }
     if (this.model.vertices.length >= 2) {
-      const vHit = hitTestVertex(p, this.model.vertices, this.cfg.hitRadius);
+      const vHit = hitTestVertex(p, this.model.vertices, hit);
       if (vHit !== null && vHit > 0 && vHit < this.model.vertices.length - 1) {
         return { kind: 'vertex', loopIndex: null, vertexIndex: vHit };
       }
-      const wHit = hitTestWall(p, this.model.vertices, false, this.cfg.hitRadius);
+      const wHit = hitTestWall(p, this.model.vertices, false, hit);
       if (wHit !== null) {
         return { kind: 'wall', loopIndex: null, wallIndex: wHit };
       }
@@ -543,7 +568,7 @@ export class DrawingController {
     // Continue active chain from last endpoint
     if ((status === 'open' || status === 'drawing') && vertices.length > 0) {
       const last = vertices[vertices.length - 1];
-      if (nearPoint(p, last, this.cfg.hitRadius * 1.6)) {
+      if (nearPoint(p, last, this.worldHitRadius() * 1.6)) {
         this.model = { ...this.model, status: 'drawing', draftEnd: p };
         this.active = true;
         this.pointerId = e.pointerId;
@@ -555,6 +580,7 @@ export class DrawingController {
 
     // Select existing geometry
     const hit = this.hitTestAll(p);
+
     if (hit.kind === 'door') {
       this.setSelection(hit, false, false, true);
       this.dragDoor = { loopIndex: hit.loopIndex, doorId: hit.doorId };
@@ -564,6 +590,27 @@ export class DrawingController {
       this.cfg.onChange();
       return;
     }
+
+    // Selected door: drag along its wall when grabbing that wall
+    if (
+      this.selection.kind === 'door' &&
+      hit.kind === 'wall' &&
+      hit.loopIndex === this.selection.loopIndex
+    ) {
+      const sel = this.selection;
+      const loop = this.model.loops[sel.loopIndex];
+      const door = loop?.doors.find((d) => d.id === sel.doorId);
+      if (door && door.wallIndex === hit.wallIndex) {
+        this.dragDoor = { loopIndex: sel.loopIndex, doorId: sel.doorId };
+        this.moveDoorToPoint(sel.loopIndex, sel.doorId, p);
+        this.active = true;
+        this.pointerId = e.pointerId;
+        this.canvas.setPointerCapture(e.pointerId);
+        this.cfg.onChange();
+        return;
+      }
+    }
+
     if (hit.kind !== 'none') {
       const focusWall = hit.kind === 'wall';
       const focusAngle = hit.kind === 'vertex';
@@ -639,7 +686,7 @@ export class DrawingController {
     }
 
     const canClose =
-      vertices.length >= 3 && nearPoint(draftEnd, vertices[0], this.cfg.closeRadius);
+      vertices.length >= 3 && nearPoint(draftEnd, vertices[0], this.worldCloseRadius());
 
     if (canClose) {
       if (wouldIntersect(vertices, vertices[0], true)) {
@@ -710,7 +757,7 @@ export class DrawingController {
     const { vertices } = this.model;
     const origin = vertices[vertices.length - 1];
 
-    if (vertices.length >= 3 && nearPoint(raw, vertices[0], this.cfg.closeRadius)) {
+    if (vertices.length >= 3 && nearPoint(raw, vertices[0], this.worldCloseRadius())) {
       return { ...vertices[0] };
     }
 

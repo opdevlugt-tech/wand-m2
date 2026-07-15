@@ -110,7 +110,7 @@ export const translations: Record<Lang, Dict> = {
     residual: 'restfout',
     hoverCorner: (n) => `Hover: live vorm met restfout bij hoek ${n}`,
     hint:
-      'Meerdere lussen. Deel… = scheidingswand-opties (hover). + Deur op muur. Maten per lijn.',
+      'Zoom: muiswiel of +/− (maten blijven). Pan: middelmuis of Alt+sleep. Deur: sleep langs muur. Deel… = scheidingswand.',
   },
   en: {
     pageTitle: 'Wall-m²',

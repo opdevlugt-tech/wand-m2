@@ -14,6 +14,11 @@ import {
 import { DrawingController } from './canvas/interaction';
 import { drawScene, resizeCanvas } from './canvas/renderer';
 import { detectLang, LANGS, setStoredLang, t, type Lang } from './i18n';
+import {
+  DEFAULT_VIEW,
+  type ViewTransform,
+  zoomAt,
+} from './geometry/view';
 
 const HIT = 16;
 const CLOSE = 22;
@@ -50,6 +55,9 @@ export function boot(root: HTMLElement): void {
   const splitPicks = root.querySelector<HTMLElement>('#split-option-picks');
   const splitCancel = root.querySelector<HTMLButtonElement>('#split-cancel');
   const splitApply = root.querySelector<HTMLButtonElement>('#split-apply');
+  const zoomInBtn = root.querySelector<HTMLButtonElement>('#zoom-in');
+  const zoomOutBtn = root.querySelector<HTMLButtonElement>('#zoom-out');
+  const zoomResetBtn = root.querySelector<HTMLButtonElement>('#zoom-reset');
   const undoBtn = root.querySelector<HTMLButtonElement>('#undo');
   const resetBtn = root.querySelector<HTMLButtonElement>('#reset');
   const stage = root.querySelector<HTMLElement>('.stage');
@@ -98,6 +106,9 @@ export function boot(root: HTMLElement): void {
     !splitPicks ||
     !splitCancel ||
     !splitApply ||
+    !zoomInBtn ||
+    !zoomOutBtn ||
+    !zoomResetBtn ||
     !undoBtn ||
     !resetBtn ||
     !stage ||
@@ -147,11 +158,19 @@ export function boot(root: HTMLElement): void {
     candidates: PartitionCandidate[];
     hover: number | null;
   } | null = null;
+  let view: ViewTransform = { ...DEFAULT_VIEW };
+  let panDrag: { x: number; y: number; ox: number; oy: number } | null = null;
 
   const getPxPerMeter = () => {
     const v = Number(pxInput.value);
     return Number.isFinite(v) && v >= 5 ? v : 50;
   };
+
+  const getView = () => view;
+
+  function syncZoomLabel(): void {
+    zoomResetBtn!.textContent = `${Math.round(view.scale * 100)}%`;
+  }
 
   function applyStaticI18n(): void {
     tr = t(lang);
@@ -223,6 +242,7 @@ export function boot(root: HTMLElement): void {
     closeRadius: CLOSE,
     minLengthPx: MIN_LEN,
     getPxPerMeter,
+    getView,
     onChange: () => {
       updateHud(controller.model);
       paint();
@@ -326,6 +346,7 @@ export function boot(root: HTMLElement): void {
           }))
         : undefined,
       partitionHoverIndex: splitState?.hover ?? null,
+      view,
     });
   }
 
@@ -850,6 +871,65 @@ export function boot(root: HTMLElement): void {
     updateHud(controller.model);
   });
   splitApply.addEventListener('click', () => applySplit());
+
+  function applyZoom(factor: number, sx?: number, sy?: number): void {
+    const cx = sx ?? cssW / 2;
+    const cy = sy ?? cssH / 2;
+    view = zoomAt(view, cx, cy, factor);
+    syncZoomLabel();
+    paint();
+  }
+
+  zoomInBtn.addEventListener('click', () => applyZoom(1.2));
+  zoomOutBtn.addEventListener('click', () => applyZoom(1 / 1.2));
+  zoomResetBtn.addEventListener('click', () => {
+    view = { ...DEFAULT_VIEW };
+    syncZoomLabel();
+    paint();
+  });
+
+  canvas.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+      const factor = e.deltaY > 0 ? 1 / 1.12 : 1.12;
+      applyZoom(factor, sx, sy);
+    },
+    { passive: false },
+  );
+
+  // Middle mouse or Alt+drag = pan (meters unchanged)
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+      e.preventDefault();
+      panDrag = { x: e.clientX, y: e.clientY, ox: view.ox, oy: view.oy };
+      canvas.setPointerCapture(e.pointerId);
+    }
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!panDrag) return;
+    view = {
+      scale: view.scale,
+      ox: panDrag.ox + (e.clientX - panDrag.x),
+      oy: panDrag.oy + (e.clientY - panDrag.y),
+    };
+    paint();
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    if (panDrag) {
+      panDrag = null;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    }
+  });
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
   doorWidthInput.addEventListener('change', () => applyTypedDoorWidth());
   doorWidthInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -863,6 +943,7 @@ export function boot(root: HTMLElement): void {
   setupPopupDrag();
   setupLangPicker();
   applyStaticI18n();
+  syncZoomLabel();
   layout();
   updateHud(controller.model);
   syncLengthFieldFromSelection();
