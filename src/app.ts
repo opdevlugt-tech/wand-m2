@@ -32,6 +32,18 @@ type PopupState = {
   absorbIndex: number | null;
 } | null;
 
+type SplitState = {
+  loopIndex: number;
+  parts: 2 | 3 | 4;
+  axis: 'x' | 'y' | 'auto';
+  /** Preview cuts for equal division */
+  cuts: PartitionCandidate[];
+  /** Optional freeform candidates (mode free) */
+  freeCandidates: PartitionCandidate[];
+  mode: 'equal' | 'free';
+  freeHover: number | null;
+};
+
 export function boot(root: HTMLElement): void {
   const canvas = root.querySelector<HTMLCanvasElement>('#canvas');
   const statusEl = root.querySelector<HTMLElement>('#status');
@@ -153,11 +165,7 @@ export function boot(root: HTMLElement): void {
   let popupState: PopupState = null;
   let relocateBase: Point[] | null = null;
   let relocatePreview: Point[] | null = null;
-  let splitState: {
-    loopIndex: number;
-    candidates: PartitionCandidate[];
-    hover: number | null;
-  } | null = null;
+  let splitState: SplitState | null = null;
   let view: ViewTransform = { ...DEFAULT_VIEW };
   let panDrag: { x: number; y: number; ox: number; oy: number } | null = null;
 
@@ -339,13 +347,20 @@ export function boot(root: HTMLElement): void {
           : null,
       ghostLoopIndex: controller.meetfoutLoopIndex,
       partitionOptions: splitState
-        ? splitState.candidates.map((c, i) => ({
+        ? (splitState.mode === 'equal'
+            ? splitState.cuts
+            : splitState.freeCandidates
+          ).map((c, i) => ({
             a: c.a,
             b: c.b,
-            label: String(i + 1),
+            label:
+              splitState!.mode === 'equal'
+                ? `÷${splitState!.parts}`
+                : String(i + 1),
           }))
         : undefined,
-      partitionHoverIndex: splitState?.hover ?? null,
+      partitionHoverIndex:
+        splitState?.mode === 'free' ? splitState.freeHover : null,
       view,
     });
   }
@@ -570,54 +585,153 @@ export function boot(root: HTMLElement): void {
     if (popupState) return;
     const li = controller.selectedLoopIndex();
     if (li === null) return;
-    const candidates = controller.getPartitionCandidates(li);
-    if (candidates.length === 0) {
+    const plan = controller.getEqualDivisionPlan(li, 2, 'auto');
+    const free = controller.getPartitionCandidates(li);
+    if (!plan && free.length === 0) {
       statusEl!.textContent = tr.splitNone;
       return;
     }
-    splitState = { loopIndex: li, candidates, hover: 0 };
+    splitState = {
+      loopIndex: li,
+      parts: 2,
+      axis: plan?.axis ?? 'auto',
+      cuts: plan?.cuts ?? [],
+      freeCandidates: free,
+      mode: plan ? 'equal' : 'free',
+      freeHover: free.length ? 0 : null,
+    };
     splitKicker!.textContent = tr.splitKicker;
     splitTitle!.textContent = tr.splitTitle;
-    splitLead!.textContent = tr.splitLead(candidates.length);
     splitCancel!.textContent = tr.splitCancel;
     splitApply!.textContent = tr.splitApply;
     splitApply!.disabled = false;
     renderSplitPicks();
     splitPopup!.classList.remove('hidden');
-    // position like meetfout
     splitPopup!.classList.remove('popup-dragged');
     splitPopup!.style.left = '16px';
     splitPopup!.style.top = '50%';
     splitPopup!.style.transform = 'translateY(-50%)';
-    statusEl!.textContent = tr.statusSplit(1);
+    statusEl!.textContent = tr.statusSplitParts(2);
+    paint();
+  }
+
+  function setEqualParts(parts: 2 | 3 | 4): void {
+    if (!splitState) return;
+    const plan = controller.getEqualDivisionPlan(splitState.loopIndex, parts, 'auto');
+    if (!plan) {
+      statusEl!.textContent = tr.splitNone;
+      return;
+    }
+    splitState = {
+      ...splitState,
+      parts,
+      axis: plan.axis,
+      cuts: plan.cuts,
+      mode: 'equal',
+      freeHover: null,
+    };
+    splitApply!.disabled = false;
+    statusEl!.textContent = tr.statusSplitParts(parts);
+    renderSplitPicks();
+    paint();
+  }
+
+  function toggleSplitAxis(): void {
+    if (!splitState || splitState.mode !== 'equal') return;
+    const next: 'x' | 'y' = splitState.axis === 'x' ? 'y' : 'x';
+    const plan = controller.getEqualDivisionPlan(
+      splitState.loopIndex,
+      splitState.parts,
+      next,
+    );
+    if (!plan) {
+      statusEl!.textContent = tr.splitNone;
+      return;
+    }
+    splitState = {
+      ...splitState,
+      axis: plan.axis,
+      cuts: plan.cuts,
+    };
+    renderSplitPicks();
     paint();
   }
 
   function renderSplitPicks(): void {
     if (!splitState) return;
+    splitLead!.textContent = tr.splitLeadEqual;
     splitPicks!.innerHTML = '';
-    splitState.candidates.forEach((c, i) => {
+
+    // ÷2 ÷3 ÷4
+    for (const p of [2, 3, 4] as const) {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'corner-pick' + (splitState!.hover === i ? ' active' : '');
-      btn.textContent = String(i + 1);
-      btn.title = `${c.wallA + 1}↔${c.wallB + 1}`;
+      btn.className =
+        'corner-pick' +
+        (splitState.mode === 'equal' && splitState.parts === p ? ' active' : '');
+      btn.textContent = `÷${p}`;
+      btn.title = tr.splitByN(p);
+      btn.addEventListener('click', () => setEqualParts(p));
       btn.addEventListener('pointerenter', () => {
         if (!splitState) return;
-        splitState = { ...splitState, hover: i };
-        statusEl!.textContent = tr.statusSplit(i + 1);
-        renderSplitPicks();
-        paint();
-      });
-      btn.addEventListener('click', () => {
-        if (!splitState) return;
-        splitState = { ...splitState, hover: i };
-        splitApply!.disabled = false;
+        const plan = controller.getEqualDivisionPlan(splitState.loopIndex, p, 'auto');
+        if (!plan) return;
+        splitState = {
+          ...splitState,
+          parts: p,
+          axis: plan.axis,
+          cuts: plan.cuts,
+          mode: 'equal',
+        };
+        statusEl!.textContent = tr.statusSplitParts(p);
         renderSplitPicks();
         paint();
       });
       splitPicks!.appendChild(btn);
-    });
+    }
+
+    // axis toggle
+    const axisBtn = document.createElement('button');
+    axisBtn.type = 'button';
+    axisBtn.className = 'corner-pick';
+    axisBtn.textContent =
+      splitState.axis === 'x' ? '↕' : splitState.axis === 'y' ? '↔' : '↻';
+    axisBtn.title = tr.splitFlipAxis;
+    axisBtn.addEventListener('click', () => toggleSplitAxis());
+    splitPicks!.appendChild(axisBtn);
+
+    // freeform positions
+    if (splitState.freeCandidates.length > 0) {
+      const freelabel = document.createElement('span');
+      freelabel.className = 'popup-hint';
+      freelabel.style.flexBasis = '100%';
+      freelabel.textContent = tr.splitFree;
+      splitPicks!.appendChild(freelabel);
+      splitState.freeCandidates.forEach((c, i) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className =
+          'corner-pick' +
+          (splitState!.mode === 'free' && splitState!.freeHover === i ? ' active' : '');
+        btn.textContent = String(i + 1);
+        btn.title = `${c.wallA + 1}↔${c.wallB + 1}`;
+        btn.addEventListener('pointerenter', () => {
+          if (!splitState) return;
+          splitState = { ...splitState, mode: 'free', freeHover: i };
+          statusEl!.textContent = tr.statusSplit(i + 1);
+          renderSplitPicks();
+          paint();
+        });
+        btn.addEventListener('click', () => {
+          if (!splitState) return;
+          splitState = { ...splitState, mode: 'free', freeHover: i };
+          splitApply!.disabled = false;
+          renderSplitPicks();
+          paint();
+        });
+        splitPicks!.appendChild(btn);
+      });
+    }
   }
 
   function closeSplitPanel(): void {
@@ -627,12 +741,21 @@ export function boot(root: HTMLElement): void {
   }
 
   function applySplit(): void {
-    if (!splitState || splitState.hover === null) return;
-    const c = splitState.candidates[splitState.hover];
-    if (!c) return;
+    if (!splitState) return;
     const li = splitState.loopIndex;
-    closeSplitPanel();
-    if (!controller.splitLoopWithPartition(li, c)) return;
+    if (splitState.mode === 'equal') {
+      const parts = splitState.parts;
+      const axis = splitState.axis === 'auto' ? 'auto' : splitState.axis;
+      closeSplitPanel();
+      if (!controller.splitLoopEqualParts(li, parts, axis)) return;
+    } else {
+      const i = splitState.freeHover;
+      if (i === null) return;
+      const c = splitState.freeCandidates[i];
+      if (!c) return;
+      closeSplitPanel();
+      if (!controller.splitLoopWithPartition(li, c)) return;
+    }
     syncDoorFieldFromSelection();
     updateHud(controller.model);
     paint();

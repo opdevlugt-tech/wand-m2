@@ -13,6 +13,9 @@ import {
   listNonCanonicalCorners,
   listPartitionCandidates,
   type PartitionCandidate,
+  planEqualDivision,
+  type EqualDivisionPlan,
+  splitIntoEqualParts,
   moveNextForCornerAngle,
   nearPoint,
   pointFromPolar,
@@ -380,6 +383,16 @@ export class DrawingController {
     return listPartitionCandidates(loop.vertices);
   }
 
+  getEqualDivisionPlan(
+    loopIndex: number,
+    parts: 2 | 3 | 4,
+    axis: 'x' | 'y' | 'auto' = 'auto',
+  ): EqualDivisionPlan | null {
+    const loop = this.model.loops[loopIndex];
+    if (!loop) return null;
+    return planEqualDivision(loop.vertices, parts, axis);
+  }
+
   /**
    * Split loop into two by partition candidate. Adds a door on the shared wall of each room.
    */
@@ -398,35 +411,15 @@ export class DrawingController {
       return false;
     }
 
-    const doorOnPartition = (verts: Point[]): Door[] => {
-      // closed: partition is last→first edge = wall index verts.length-1
-      const wi = verts.length - 1;
-      if (wi < 0) return [];
-      const segs = wallSegments(verts, true);
-      const seg = segs[wi];
-      if (!seg) return [];
-      const widthM = DEFAULT_DOOR_M;
-      const g = doorGeometry(seg.a, seg.b, 0.5, widthM, this.cfg.getPxPerMeter());
-      if (!g) return [];
-      return [
-        {
-          id: newDoorId(),
-          wallIndex: wi,
-          t: 0.5,
-          widthM,
-        },
-      ];
-    };
-
     const loopA: Loop = {
       id: newLoopId(),
       vertices: split.loopA,
-      doors: doorOnPartition(split.loopA),
+      doors: this.doorOnPartitionWall(split.loopA),
     };
     const loopB: Loop = {
       id: newLoopId(),
       vertices: split.loopB,
-      doors: doorOnPartition(split.loopB),
+      doors: this.doorOnPartitionWall(split.loopB),
     };
     const loops = [
       ...this.model.loops.slice(0, loopIndex),
@@ -439,6 +432,50 @@ export class DrawingController {
     this.setSelection({ kind: 'wall', loopIndex, wallIndex: 0 }, true, false);
     this.cfg.onChange();
     return true;
+  }
+
+  /** Split into 2 / 3 / 4 equal strips along long axis. */
+  splitLoopEqualParts(
+    loopIndex: number,
+    parts: 2 | 3 | 4,
+    axis: 'x' | 'y' | 'auto' = 'auto',
+  ): boolean {
+    const loop = this.model.loops[loopIndex];
+    if (!loop) return false;
+    const pieces = splitIntoEqualParts(loop.vertices, parts, axis);
+    if (!pieces || pieces.length !== parts) {
+      this.cfg.onReject();
+      return false;
+    }
+    const newLoops: Loop[] = pieces.map((verts) => ({
+      id: newLoopId(),
+      vertices: verts,
+      doors: this.doorOnPartitionWall(verts),
+    }));
+    // Only first/last get outer walls without shared door both sides - each strip gets door on one partition edge
+    // doorOnPartitionWall puts door on last→first which is the cut for sequential remainders - good enough
+    const loops = [
+      ...this.model.loops.slice(0, loopIndex),
+      ...newLoops,
+      ...this.model.loops.slice(loopIndex + 1),
+    ];
+    this.model = { ...this.model, loops };
+    this.meetfoutLoopIndex = null;
+    this.setSelection({ kind: 'wall', loopIndex, wallIndex: 0 }, true, false);
+    this.cfg.onChange();
+    return true;
+  }
+
+  private doorOnPartitionWall(verts: Point[]): Door[] {
+    const wi = verts.length - 1;
+    if (wi < 0) return [];
+    const segs = wallSegments(verts, true);
+    const seg = segs[wi];
+    if (!seg) return [];
+    const widthM = DEFAULT_DOOR_M;
+    const g = doorGeometry(seg.a, seg.b, 0.5, widthM, this.cfg.getPxPerMeter());
+    if (!g) return [];
+    return [{ id: newDoorId(), wallIndex: wi, t: 0.5, widthM }];
   }
 
   private moveDoorToPoint(loopIndex: number, doorId: string, p: Point): boolean {

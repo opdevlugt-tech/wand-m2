@@ -1014,3 +1014,208 @@ export function splitPolygonByPartition(
   if (polygonSelfIntersects(loopA, true) || polygonSelfIntersects(loopB, true)) return null;
   return { loopA, loopB };
 }
+
+/** Map a boundary point to nearest wall index + t. */
+export function pointToWallParam(
+  vertices: Point[],
+  p: Point,
+): { wallIndex: number; t: number } | null {
+  const segs = wallSegments(vertices, true);
+  let best: { wallIndex: number; t: number; d: number } | null = null;
+  for (let i = 0; i < segs.length; i++) {
+    const d = distPointToSegment(p, segs[i].a, segs[i].b);
+    const t = projectTOnSegment(p, segs[i].a, segs[i].b);
+    if (!best || d < best.d) best = { wallIndex: i, t, d };
+  }
+  if (!best || best.d > 2) return null;
+  return { wallIndex: best.wallIndex, t: best.t };
+}
+
+/**
+ * Chord from intersecting a horizontal (axis='y') or vertical (axis='x') line
+ * through the polygon. Uses the two extreme intersection points.
+ */
+export function axisCutChord(
+  vertices: Point[],
+  axis: 'x' | 'y',
+  value: number,
+): PartitionCandidate | null {
+  const segs = wallSegments(vertices, true);
+  const hits: { p: Point; wall: number; t: number }[] = [];
+  for (let i = 0; i < segs.length; i++) {
+    const { a, b } = segs[i];
+    if (axis === 'x') {
+      const dx = b.x - a.x;
+      if (Math.abs(dx) < 1e-9) continue;
+      const t = (value - a.x) / dx;
+      if (t < -1e-6 || t > 1 + 1e-6) continue;
+      const tc = Math.max(0, Math.min(1, t));
+      const p = pointOnSegment(a, b, tc);
+      if (Math.abs(p.x - value) > 0.5) continue;
+      hits.push({ p, wall: i, t: tc });
+    } else {
+      const dy = b.y - a.y;
+      if (Math.abs(dy) < 1e-9) continue;
+      const t = (value - a.y) / dy;
+      if (t < -1e-6 || t > 1 + 1e-6) continue;
+      const tc = Math.max(0, Math.min(1, t));
+      const p = pointOnSegment(a, b, tc);
+      if (Math.abs(p.y - value) > 0.5) continue;
+      hits.push({ p, wall: i, t: tc });
+    }
+  }
+  if (hits.length < 2) return null;
+  // Dedup near points
+  const uniq: typeof hits = [];
+  for (const h of hits) {
+    if (uniq.some((u) => dist(u.p, h.p) < 1.5)) continue;
+    uniq.push(h);
+  }
+  if (uniq.length < 2) return null;
+  // Outer pair along the other axis
+  uniq.sort((u, v) => (axis === 'x' ? u.p.y - v.p.y : u.p.x - v.p.x));
+  const h0 = uniq[0];
+  const h1 = uniq[uniq.length - 1];
+  if (h0.wall === h1.wall) return null;
+  if (!chordInsidePolygon(h0.p, h1.p, vertices)) return null;
+  return {
+    id: `axis-${axis}-${value.toFixed(1)}`,
+    wallA: h0.wall,
+    tA: h0.t,
+    wallB: h1.wall,
+    tB: h1.t,
+    a: h0.p,
+    b: h1.p,
+  };
+}
+
+export type EqualDivisionPlan = {
+  parts: 2 | 3 | 4;
+  axis: 'x' | 'y';
+  cuts: PartitionCandidate[];
+};
+
+/**
+ * Equal strip division into 2/3/4 parts along the longer bbox axis (or forced axis).
+ */
+export function planEqualDivision(
+  vertices: Point[],
+  parts: 2 | 3 | 4,
+  axisPrefer?: 'x' | 'y' | 'auto',
+): EqualDivisionPlan | null {
+  if (vertices.length < 3 || parts < 2) return null;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const p of vertices) {
+    minX = Math.min(minX, p.x);
+    maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y);
+    maxY = Math.max(maxY, p.y);
+  }
+  const w = maxX - minX;
+  const h = maxY - minY;
+  if (w < 20 && h < 20) return null;
+
+  const tryAxis = (axis: 'x' | 'y'): PartitionCandidate[] | null => {
+    const min = axis === 'x' ? minX : minY;
+    const max = axis === 'x' ? maxX : maxY;
+    const span = max - min;
+    if (span < 30) return null;
+    const cuts: PartitionCandidate[] = [];
+    for (let i = 1; i < parts; i++) {
+      const value = min + (span * i) / parts;
+      const c = axisCutChord(vertices, axis, value);
+      if (!c) return null;
+      cuts.push(c);
+    }
+    return cuts;
+  };
+
+  const prefer =
+    axisPrefer === 'x' || axisPrefer === 'y'
+      ? axisPrefer
+      : w >= h
+        ? 'x'
+        : 'y';
+  const alt = prefer === 'x' ? 'y' : 'x';
+
+  let cuts = tryAxis(prefer);
+  let axis: 'x' | 'y' = prefer;
+  if (!cuts) {
+    cuts = tryAxis(alt);
+    axis = alt;
+  }
+  if (!cuts || cuts.length !== parts - 1) return null;
+  return { parts, axis, cuts };
+}
+
+/**
+ * Sequentially apply cuts: first cut splits original, next cuts apply to the
+ * piece still containing the remaining cut lines (the “remainder” side).
+ * Returns N polygons or null.
+ */
+export function splitIntoEqualParts(
+  vertices: Point[],
+  parts: 2 | 3 | 4,
+  axisPrefer?: 'x' | 'y' | 'auto',
+): Point[][] | null {
+  const plan = planEqualDivision(vertices, parts, axisPrefer);
+  if (!plan) return null;
+
+  // Sort cuts by axis position
+  const sorted = [...plan.cuts].sort((a, b) => {
+    const va = plan.axis === 'x' ? (a.a.x + a.b.x) / 2 : (a.a.y + a.b.y) / 2;
+    const vb = plan.axis === 'x' ? (b.a.x + b.b.x) / 2 : (b.a.y + b.b.y) / 2;
+    return va - vb;
+  });
+
+  const results: Point[][] = [];
+  let remainder = vertices.map((p) => ({ ...p }));
+
+  for (let i = 0; i < sorted.length; i++) {
+    // Re-project cut onto current remainder
+    const mid =
+      plan.axis === 'x'
+        ? (sorted[i].a.x + sorted[i].b.x) / 2
+        : (sorted[i].a.y + sorted[i].b.y) / 2;
+    const cut = axisCutChord(remainder, plan.axis, mid);
+    if (!cut) return null;
+    const split = splitPolygonByPartition(
+      remainder,
+      cut.wallA,
+      cut.tA,
+      cut.wallB,
+      cut.tB,
+    );
+    if (!split) return null;
+
+    // Which piece is the "low" side (strip) vs remainder?
+    const cA = centroidOf(split.loopA);
+    const cB = centroidOf(split.loopB);
+    const valA = plan.axis === 'x' ? cA.x : cA.y;
+    const valB = plan.axis === 'x' ? cB.x : cB.y;
+    if (valA <= valB) {
+      results.push(split.loopA);
+      remainder = split.loopB;
+    } else {
+      results.push(split.loopB);
+      remainder = split.loopA;
+    }
+  }
+  results.push(remainder);
+  if (results.length !== parts) return null;
+  return results;
+}
+
+function centroidOf(verts: Point[]): Point {
+  let x = 0;
+  let y = 0;
+  for (const p of verts) {
+    x += p.x;
+    y += p.y;
+  }
+  const n = Math.max(1, verts.length);
+  return { x: x / n, y: y / n };
+}

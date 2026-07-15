@@ -35,10 +35,15 @@ export type Dict = {
   splitKicker: string;
   splitTitle: string;
   splitLead: (n: number) => string;
+  splitLeadEqual: string;
   splitApply: string;
   splitCancel: string;
   splitNone: string;
+  splitByN: (n: number) => string;
+  splitFlipAxis: string;
+  splitFree: string;
   statusSplit: (n: number) => string;
+  statusSplitParts: (n: number) => string;
   interiorDeg: string;
   snapTitle: string;
   snapBtn: string;
@@ -81,13 +86,17 @@ export const translations: Record<Lang, Dict> = {
     removeDoor: 'Deur weg',
     splitLoop: 'Deel…',
     splitKicker: 'Scheidingswand',
-    splitTitle: 'Kies positie scheidingswand',
-    splitLead: (n) =>
-      `${n} optie(s). Hover om te zien; bevestig om de lus in 2 kamers te delen (deur in tussenwand).`,
+    splitTitle: 'Deel de lus',
+    splitLead: (n) => `${n} vrije optie(s)`,
+    splitLeadEqual: 'Kies ÷2 / ÷3 / ÷4 (gelijke banen). Hover = preview. ↻ = andere richting.',
     splitApply: 'Deel hier',
     splitCancel: 'Annuleren',
-    splitNone: 'Geen geldige scheiding voor deze vorm (min. 4 hoeken).',
-    statusSplit: (n) => `Scheiding: optie ${n} · hover over nummers`,
+    splitNone: 'Geen geldige scheiding voor deze vorm.',
+    splitByN: (n) => `Delen door ${n}`,
+    splitFlipAxis: 'Wissel horizontaal/verticaal',
+    splitFree: 'Of vrije positie:',
+    statusSplit: (n) => `Vrije scheiding: optie ${n}`,
+    statusSplitParts: (n) => `Delen door ${n} · gelijke banen`,
     interiorDeg: 'Binnenhoek (°)',
     snapTitle: 'Zet binnenhoek op 45° / 90° / 135° (45°-raster)',
     snapBtn: '→45/90/135',
@@ -131,13 +140,17 @@ export const translations: Record<Lang, Dict> = {
     removeDoor: 'Remove door',
     splitLoop: 'Split…',
     splitKicker: 'Partition wall',
-    splitTitle: 'Choose partition position',
-    splitLead: (n) =>
-      `${n} option(s). Hover to preview; confirm to split into 2 rooms (door in partition).`,
+    splitTitle: 'Split the loop',
+    splitLead: (n) => `${n} free option(s)`,
+    splitLeadEqual: 'Pick ÷2 / ÷3 / ÷4 (equal strips). Hover = preview. ↻ = flip axis.',
     splitApply: 'Split here',
     splitCancel: 'Cancel',
-    splitNone: 'No valid partition for this shape (need ≥4 corners).',
-    statusSplit: (n) => `Partition: option ${n} · hover numbers`,
+    splitNone: 'No valid partition for this shape.',
+    splitByN: (n) => `Divide by ${n}`,
+    splitFlipAxis: 'Toggle horizontal/vertical',
+    splitFree: 'Or free position:',
+    statusSplit: (n) => `Free partition: option ${n}`,
+    statusSplitParts: (n) => `Divide by ${n} · equal strips`,
     interiorDeg: 'Interior (°)',
     snapTitle: 'Snap interior to 45° / 90° / 135°',
     snapBtn: '→45/90/135',
@@ -181,13 +194,17 @@ export const translations: Record<Lang, Dict> = {
     removeDoor: 'Quitar puerta',
     splitLoop: 'Dividir…',
     splitKicker: 'Tabique',
-    splitTitle: 'Elige posición del tabique',
-    splitLead: (n) =>
-      `${n} opción(es). Pasa el ratón para ver; confirma para dividir en 2 (puerta en tabique).`,
+    splitTitle: 'Dividir el bucle',
+    splitLead: (n) => `${n} opción(es) libres`,
+    splitLeadEqual: 'Elige ÷2 / ÷3 / ÷4. Hover = vista. ↻ = eje.',
     splitApply: 'Dividir aquí',
     splitCancel: 'Cancelar',
-    splitNone: 'Sin partición válida (≥4 esquinas).',
-    statusSplit: (n) => `Tabique: opción ${n}`,
+    splitNone: 'Sin partición válida.',
+    splitByN: (n) => `Dividir en ${n}`,
+    splitFlipAxis: 'Cambiar eje',
+    splitFree: 'O posición libre:',
+    statusSplit: (n) => `Libre: opción ${n}`,
+    statusSplitParts: (n) => `Dividir en ${n}`,
     interiorDeg: 'Interior (°)',
     snapTitle: 'Ajustar interior a 45° / 90° / 135°',
     snapBtn: '→45/90/135',
@@ -231,13 +248,17 @@ export const translations: Record<Lang, Dict> = {
     removeDoor: 'Usuń drzwi',
     splitLoop: 'Podziel…',
     splitKicker: 'Ściana działowa',
-    splitTitle: 'Wybierz pozycję ściany',
-    splitLead: (n) =>
-      `${n} opcji. Najedź, aby podgląd; potwierdź podział na 2 (drzwi w ścianie).`,
+    splitTitle: 'Podziel pętlę',
+    splitLead: (n) => `${n} wolnych opcji`,
+    splitLeadEqual: 'Wybierz ÷2 / ÷3 / ÷4. Hover = podgląd. ↻ = oś.',
     splitApply: 'Podziel tu',
     splitCancel: 'Anuluj',
-    splitNone: 'Brak poprawnej ściany (≥4 narożniki).',
-    statusSplit: (n) => `Podział: opcja ${n}`,
+    splitNone: 'Brak poprawnej ściany.',
+    splitByN: (n) => `Podziel na ${n}`,
+    splitFlipAxis: 'Zmień oś',
+    splitFree: 'Lub wolna pozycja:',
+    statusSplit: (n) => `Wolna: opcja ${n}`,
+    statusSplitParts: (n) => `Podziel na ${n}`,
     interiorDeg: 'Kąt wewn. (°)',
     snapTitle: 'Ustaw kąt na 45° / 90° / 135°',
     snapBtn: '→45/90/135',
@@ -281,13 +302,17 @@ export const translations: Record<Lang, Dict> = {
     removeDoor: 'Убрать дверь',
     splitLoop: 'Разделить…',
     splitKicker: 'Перегородка',
-    splitTitle: 'Выберите позицию перегородки',
-    splitLead: (n) =>
-      `${n} вариант(ов). Наведите для превью; подтвердите разделение на 2 (дверь в стене).`,
+    splitTitle: 'Разделить контур',
+    splitLead: (n) => `${n} свободных вариантов`,
+    splitLeadEqual: 'Выберите ÷2 / ÷3 / ÷4. Hover = превью. ↻ = ось.',
     splitApply: 'Разделить',
     splitCancel: 'Отмена',
-    splitNone: 'Нет допустимой перегородки (≥4 угла).',
-    statusSplit: (n) => `Перегородка: вариант ${n}`,
+    splitNone: 'Нет допустимой перегородки.',
+    splitByN: (n) => `На ${n} части`,
+    splitFlipAxis: 'Сменить ось',
+    splitFree: 'Или свободная позиция:',
+    statusSplit: (n) => `Свободно: вариант ${n}`,
+    statusSplitParts: (n) => `Деление на ${n}`,
     interiorDeg: 'Угол (°)',
     snapTitle: 'Привязать угол к 45° / 90° / 135°',
     snapBtn: '→45/90/135',

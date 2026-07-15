@@ -26,6 +26,8 @@ import {
   wallPiecesWithDoors,
   listPartitionCandidates,
   splitPolygonByPartition,
+  planEqualDivision,
+  splitIntoEqualParts,
 } from '../src/geometry/math';
 import type { Point } from '../src/geometry/types';
 
@@ -209,6 +211,19 @@ describe('partition split', () => {
     const a1 = polygonAreaM2(split!.loopA, 1);
     const a2 = polygonAreaM2(split!.loopB, 1);
     expect(a1 + a2).toBeCloseTo(10000, 0);
+  });
+
+  it('equal division by 2/3/4 preserves total area', () => {
+    for (const n of [2, 3, 4] as const) {
+      const plan = planEqualDivision(square, n, 'x');
+      expect(plan).not.toBeNull();
+      expect(plan!.cuts.length).toBe(n - 1);
+      const parts = splitIntoEqualParts(square, n, 'x');
+      expect(parts).not.toBeNull();
+      expect(parts!.length).toBe(n);
+      const sum = parts!.reduce((s, p) => s + polygonAreaM2(p, 1), 0);
+      expect(sum).toBeCloseTo(10000, 0);
+    }
   });
 });
 
