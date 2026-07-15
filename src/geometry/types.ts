@@ -5,7 +5,12 @@ export type Segment = {
   b: Point;
 };
 
-/** Door opening on a wall, position along the wall as t∈(0,1). */
+/**
+ * hinge: 'L' = scharnier bij openA (begin opening langs muur-richting),
+ *        'R' = scharnier bij openB.
+ * swing: 1 = 90° naar links t.o.v. muur-richting (CCW),
+ *       -1 = 90° naar rechts (CW).
+ */
 export type Door = {
   id: string;
   wallIndex: number;
@@ -13,6 +18,8 @@ export type Door = {
   t: number;
   /** Clear opening width in meters. */
   widthM: number;
+  hinge: 'L' | 'R';
+  swing: 1 | -1;
 };
 
 /** Committed closed polygon (no repeated first vertex). */

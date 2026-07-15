@@ -251,7 +251,7 @@ function drawClosedLoop(
   opts: RenderOptions,
   loopIndex: number,
   fillColor: string,
-  doors: { id: string; wallIndex: number; t: number; widthM: number }[] = [],
+  doors: { id: string; wallIndex: number; t: number; widthM: number; hinge?: 'L' | 'R'; swing?: 1 | -1 }[] = [],
 ): void {
   if (vertices.length < 3) return;
   const wind = polygonWindingSign(vertices);
@@ -288,7 +288,9 @@ function drawClosedLoop(
       const g = doorGeometry(s.a, s.b, d.t, d.widthM, opts.pxPerMeter);
       if (!g) continue;
       const isSel = opts.selectedDoorId === d.id;
-      drawDoor(ctx, g, isSel, wind);
+      const hinge = d.hinge ?? 'L';
+      const swing = (d.swing ?? 1) as 1 | -1;
+      drawDoor(ctx, g, isSel, hinge, swing);
     }
   }
 
@@ -326,7 +328,8 @@ function drawDoor(
     halfWidthPx: number;
   },
   selected: boolean,
-  wind: number,
+  hinge: 'L' | 'R',
+  swing: 1 | -1,
 ): void {
   const color = selected ? COLORS.doorSel : COLORS.door;
   // jamb ticks
@@ -345,34 +348,50 @@ function drawDoor(
   // thin opening guide
   strokeSeg(ctx, g.openA, g.openB, color, 1.5, true);
 
-  // swing arc (architectural) into interior side
-  const side = wind >= 0 ? 1 : -1;
-  const hinge = g.openA;
+  // L = hinge at openA (start of opening along wall dir), R = openB
+  const hingePt = hinge === 'L' ? g.openA : g.openB;
+  const leafClosed = hinge === 'L' ? g.openB : g.openA;
   const r = dist(g.openA, g.openB);
-  const start = g.dir;
-  const end = g.dir + side * (Math.PI / 2);
+
+  // Direction of leaf when closed (from hinge along opening)
+  const closedDir = angleOf(hingePt, leafClosed);
+  // Swing: +1 = CCW 90° from closed dir, -1 = CW 90°
+  const openDir = closedDir + swing * (Math.PI / 2);
+
+  // Arc from closed to open
+  const a0 = closedDir;
+  const a1 = openDir;
+  const ccw = swing > 0;
   ctx.beginPath();
-  ctx.arc(hinge.x, hinge.y, r, Math.min(start, end), Math.max(start, end));
+  if (ccw) {
+    ctx.arc(hingePt.x, hingePt.y, r, a0, a1, false);
+  } else {
+    ctx.arc(hingePt.x, hingePt.y, r, a0, a1, true);
+  }
   ctx.strokeStyle = selected ? COLORS.doorSel : COLORS.doorSwing;
   ctx.lineWidth = selected ? lw(2) : lw(1.5);
-  ctx.setLineDash([4, 3]);
+  ctx.setLineDash([lw(4), lw(3)]);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // leaf line closed position = along wall; open leaf at 90°
+  // Open leaf
   const leafEnd = {
-    x: hinge.x + Math.cos(end) * r,
-    y: hinge.y + Math.sin(end) * r,
+    x: hingePt.x + Math.cos(openDir) * r,
+    y: hingePt.y + Math.sin(openDir) * r,
   };
-  strokeSeg(ctx, hinge, leafEnd, color, selected ? 2.5 : 1.8);
+  strokeSeg(ctx, hingePt, leafEnd, color, selected ? 2.5 : 1.8);
 
-  // width label near center
-  drawTinyTag(
-    ctx,
-    g.center.x,
-    g.center.y - 12,
-    selected ? 'deur ✓' : 'deur',
-  );
+  // Hinge marker (small filled circle)
+  ctx.beginPath();
+  ctx.arc(hingePt.x, hingePt.y, lw(3.5), 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+
+  const tag =
+    selected
+      ? `deur ${hinge === 'L' ? 'L' : 'R'}${swing > 0 ? '↺' : '↻'}`
+      : 'deur';
+  drawTinyTag(ctx, g.center.x, g.center.y - lw(12), tag);
 }
 
 function drawInteriorCorner(

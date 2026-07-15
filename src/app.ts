@@ -58,6 +58,9 @@ export function boot(root: HTMLElement): void {
   const doorWidthInput = root.querySelector<HTMLInputElement>('#door-width');
   const doorField = root.querySelector<HTMLElement>('#door-field');
   const removeDoorBtn = root.querySelector<HTMLButtonElement>('#remove-door');
+  const doorHingeLBtn = root.querySelector<HTMLButtonElement>('#door-hinge-l');
+  const doorHingeRBtn = root.querySelector<HTMLButtonElement>('#door-hinge-r');
+  const doorSwingBtn = root.querySelector<HTMLButtonElement>('#door-swing');
   const labelDoor = root.querySelector<HTMLElement>('#label-door');
   const splitLoopBtn = root.querySelector<HTMLButtonElement>('#split-loop');
   const splitPopup = root.querySelector<HTMLElement>('#split-popup');
@@ -109,6 +112,9 @@ export function boot(root: HTMLElement): void {
     !doorWidthInput ||
     !doorField ||
     !removeDoorBtn ||
+    !doorHingeLBtn ||
+    !doorHingeRBtn ||
+    !doorSwingBtn ||
     !labelDoor ||
     !splitLoopBtn ||
     !splitPopup ||
@@ -193,6 +199,12 @@ export function boot(root: HTMLElement): void {
     snapAngleBtn!.title = tr.snapTitle;
     addDoorBtn!.textContent = tr.addDoor;
     removeDoorBtn!.textContent = tr.removeDoor;
+    doorHingeLBtn!.textContent = tr.doorHingeL;
+    doorHingeLBtn!.title = 'Scharnier links (L)';
+    doorHingeRBtn!.textContent = tr.doorHingeR;
+    doorHingeRBtn!.title = 'Scharnier rechts (R)';
+    doorSwingBtn!.textContent = tr.doorSwing;
+    doorSwingBtn!.title = 'Draairichting omdraaien';
     splitLoopBtn!.textContent = tr.splitLoop;
     undoBtn!.textContent = tr.undo;
     resetBtn!.textContent = tr.reset;
@@ -571,12 +583,20 @@ export function boot(root: HTMLElement): void {
       doorWidthInput!.value = '';
       doorWidthInput!.disabled = true;
       removeDoorBtn!.disabled = true;
+      doorHingeLBtn!.disabled = true;
+      doorHingeRBtn!.disabled = true;
+      doorSwingBtn!.disabled = true;
       doorField!.classList.remove('active');
     } else {
       doorWidthInput!.disabled = false;
       removeDoorBtn!.disabled = false;
+      doorHingeLBtn!.disabled = false;
+      doorHingeRBtn!.disabled = false;
+      doorSwingBtn!.disabled = false;
       doorWidthInput!.value = door.widthM.toFixed(2);
       doorField!.classList.add('active');
+      doorHingeLBtn!.classList.toggle('active', (door.hinge ?? 'L') === 'L');
+      doorHingeRBtn!.classList.toggle('active', (door.hinge ?? 'L') === 'R');
     }
     syncingDoorField = false;
   }
@@ -856,9 +876,17 @@ export function boot(root: HTMLElement): void {
 
     if (hasDoor) {
       const d = controller.getSelectedDoor();
-      statusEl!.textContent = tr.statusDoor(
-        d ? `${d.widthM.toFixed(2)} m` : '—',
-      );
+      if (d) {
+        const hinge = (d.hinge ?? 'L') === 'L' ? 'L' : 'R';
+        const swing = (d.swing ?? 1) > 0 ? '↺' : '↻';
+        statusEl!.textContent = tr.statusDoorDetail(
+          `${d.widthM.toFixed(2)} m`,
+          hinge,
+          swing,
+        );
+      } else {
+        statusEl!.textContent = tr.statusDoor('—');
+      }
       return;
     }
     if (hasVert) {
@@ -984,6 +1012,24 @@ export function boot(root: HTMLElement): void {
   });
   removeDoorBtn.addEventListener('click', () => {
     if (!controller.removeSelectedDoor()) return;
+    syncDoorFieldFromSelection();
+    updateHud(controller.model);
+    paint();
+  });
+  doorHingeLBtn.addEventListener('click', () => {
+    if (!controller.setSelectedDoorHinge('L')) return;
+    syncDoorFieldFromSelection();
+    updateHud(controller.model);
+    paint();
+  });
+  doorHingeRBtn.addEventListener('click', () => {
+    if (!controller.setSelectedDoorHinge('R')) return;
+    syncDoorFieldFromSelection();
+    updateHud(controller.model);
+    paint();
+  });
+  doorSwingBtn.addEventListener('click', () => {
+    if (!controller.flipSelectedDoorSwing()) return;
     syncDoorFieldFromSelection();
     updateHud(controller.model);
     paint();

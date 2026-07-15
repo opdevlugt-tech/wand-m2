@@ -31,6 +31,10 @@ export type Dict = {
   doorM: string;
   addDoor: string;
   removeDoor: string;
+  doorHingeL: string;
+  doorHingeR: string;
+  doorSwing: string;
+  statusDoorDetail: (w: string, hinge: string, swing: string) => string;
   splitLoop: string;
   splitKicker: string;
   splitTitle: string;
@@ -84,6 +88,11 @@ export const translations: Record<Lang, Dict> = {
     doorM: 'Deur (m)',
     addDoor: '+ Deur',
     removeDoor: 'Deur weg',
+    doorHingeL: 'L',
+    doorHingeR: 'R',
+    doorSwing: '↺',
+    statusDoorDetail: (w, hinge, swing) =>
+      `Deur ${w} · scharnier ${hinge} · ${swing} · sleep om te verplaatsen`,
     splitLoop: 'Deel…',
     splitKicker: 'Scheidingswand',
     splitTitle: 'Deel de lus',
@@ -138,6 +147,11 @@ export const translations: Record<Lang, Dict> = {
     doorM: 'Door (m)',
     addDoor: '+ Door',
     removeDoor: 'Remove door',
+    doorHingeL: 'L',
+    doorHingeR: 'R',
+    doorSwing: '↺',
+    statusDoorDetail: (w, hinge, swing) =>
+      `Door ${w} · hinge ${hinge} · ${swing} · drag to move`,
     splitLoop: 'Split…',
     splitKicker: 'Partition wall',
     splitTitle: 'Split the loop',
@@ -192,6 +206,11 @@ export const translations: Record<Lang, Dict> = {
     doorM: 'Puerta (m)',
     addDoor: '+ Puerta',
     removeDoor: 'Quitar puerta',
+    doorHingeL: 'L',
+    doorHingeR: 'R',
+    doorSwing: '↺',
+    statusDoorDetail: (w, hinge, swing) =>
+      `Puerta ${w} · bisagra ${hinge} · ${swing}`,
     splitLoop: 'Dividir…',
     splitKicker: 'Tabique',
     splitTitle: 'Dividir el bucle',
@@ -246,6 +265,11 @@ export const translations: Record<Lang, Dict> = {
     doorM: 'Drzwi (m)',
     addDoor: '+ Drzwi',
     removeDoor: 'Usuń drzwi',
+    doorHingeL: 'L',
+    doorHingeR: 'R',
+    doorSwing: '↺',
+    statusDoorDetail: (w, hinge, swing) =>
+      `Drzwi ${w} · zawias ${hinge} · ${swing}`,
     splitLoop: 'Podziel…',
     splitKicker: 'Ściana działowa',
     splitTitle: 'Podziel pętlę',
@@ -300,6 +324,11 @@ export const translations: Record<Lang, Dict> = {
     doorM: 'Дверь (м)',
     addDoor: '+ Дверь',
     removeDoor: 'Убрать дверь',
+    doorHingeL: 'L',
+    doorHingeR: 'R',
+    doorSwing: '↺',
+    statusDoorDetail: (w, hinge, swing) =>
+      `Дверь ${w} · петля ${hinge} · ${swing}`,
     splitLoop: 'Разделить…',
     splitKicker: 'Перегородка',
     splitTitle: 'Разделить контур',

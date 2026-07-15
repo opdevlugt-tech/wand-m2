@@ -323,6 +323,8 @@ export class DrawingController {
       wallIndex: this.selection.wallIndex,
       t,
       widthM,
+      hinge: 'L',
+      swing: 1,
     };
     const doors = [...(loop.doors ?? []), door];
     this.writeLoop(li, { doors });
@@ -367,6 +369,31 @@ export class DrawingController {
     this.writeLoop(li, { doors: loop.doors.filter((d) => d.id !== doorId) });
     this.setSelection({ kind: 'none' });
     this.cfg.onChange();
+    return true;
+  }
+
+  setSelectedDoorHinge(hinge: 'L' | 'R'): boolean {
+    return this.patchSelectedDoor({ hinge });
+  }
+
+  flipSelectedDoorSwing(): boolean {
+    const d = this.getSelectedDoor();
+    if (!d) return false;
+    return this.patchSelectedDoor({ swing: d.swing === 1 ? -1 : 1 });
+  }
+
+  private patchSelectedDoor(patch: Partial<Door>): boolean {
+    if (this.selection.kind !== 'door') return false;
+    const sel = this.selection;
+    const loop = this.model.loops[sel.loopIndex];
+    if (!loop) return false;
+    if (!loop.doors.some((x) => x.id === sel.doorId)) return false;
+    const doors = loop.doors.map((x) =>
+      x.id === sel.doorId ? { ...x, hinge: x.hinge ?? 'L', swing: x.swing ?? 1, ...patch } : x,
+    );
+    this.writeLoop(sel.loopIndex, { doors });
+    this.cfg.onChange();
+    this.emitSelection(false, false, false);
     return true;
   }
 
@@ -475,7 +502,16 @@ export class DrawingController {
     const widthM = DEFAULT_DOOR_M;
     const g = doorGeometry(seg.a, seg.b, 0.5, widthM, this.cfg.getPxPerMeter());
     if (!g) return [];
-    return [{ id: newDoorId(), wallIndex: wi, t: 0.5, widthM }];
+    return [
+      {
+        id: newDoorId(),
+        wallIndex: wi,
+        t: 0.5,
+        widthM,
+        hinge: 'L',
+        swing: 1,
+      },
+    ];
   }
 
   private moveDoorToPoint(loopIndex: number, doorId: string, p: Point): boolean {
