@@ -1,9 +1,12 @@
 /**
- * Electra-palette: meestgebruikte knoppen + rest in dropdown.
+ * Electra-palette: vaste favorieten + 4 groepen (dropdowns).
+ * Groepen: Schakelmateriaal · Voedingen · Leidingen · Standaard
  */
 import {
+  ELECTRA_GROUP_META,
+  electraGroupItems,
   electraPrimary,
-  electraSecondary,
+  type ElectraGroup,
 } from './config/installations';
 import { drawElectraSymbol } from './canvas/symbols';
 
@@ -25,7 +28,9 @@ export function bootElectraPalette(
 
   let active: string | null = null;
   const primary = electraPrimary();
-  const secondary = electraSecondary();
+  const groupItems = Object.fromEntries(
+    ELECTRA_GROUP_META.map((g) => [g.id, electraGroupItems(g.id)]),
+  ) as Record<ElectraGroup, ReturnType<typeof electraGroupItems>>;
 
   palette.innerHTML = '';
 
@@ -37,38 +42,72 @@ export function bootElectraPalette(
     primaryRow.appendChild(makeSymbolBtn(def.id, def.labelNl, def.code, def.symbol));
   }
 
-  // Dropdown voor overige
-  const moreWrap = document.createElement('div');
-  moreWrap.className = 'symbol-more';
-  const moreLabel = document.createElement('span');
-  moreLabel.className = 'symbol-more-label';
-  moreLabel.textContent = 'Meer';
-  const sel = document.createElement('select');
-  sel.className = 'symbol-select';
-  sel.id = 'electra-more';
-  sel.setAttribute('aria-label', 'Overige electra-symbolen');
-  const opt0 = document.createElement('option');
-  opt0.value = '';
-  opt0.textContent = '— overig —';
-  sel.appendChild(opt0);
-  for (const def of secondary) {
-    const o = document.createElement('option');
-    o.value = def.id;
-    o.textContent = `${def.code} · ${def.labelNl}`;
-    sel.appendChild(o);
+  const groupsRow = document.createElement('div');
+  groupsRow.className = 'symbol-groups';
+  palette.appendChild(groupsRow);
+
+  const selects: { group: ElectraGroup; sel: HTMLSelectElement; wrap: HTMLElement }[] = [];
+
+  for (const meta of ELECTRA_GROUP_META) {
+    const items = groupItems[meta.id];
+    if (!items.length) continue;
+    const wrap = document.createElement('div');
+    wrap.className = 'symbol-more';
+    wrap.dataset.group = meta.id;
+    const lab = document.createElement('span');
+    lab.className = 'symbol-more-label';
+    lab.textContent = meta.labelNl;
+    const sel = document.createElement('select');
+    sel.className = 'symbol-select';
+    sel.setAttribute('aria-label', meta.labelNl);
+    const opt0 = document.createElement('option');
+    opt0.value = '';
+    opt0.textContent = `— ${meta.labelNl} —`;
+    sel.appendChild(opt0);
+    for (const def of items) {
+      const o = document.createElement('option');
+      o.value = def.id;
+      o.textContent = `${def.code} · ${def.labelNl}`;
+      sel.appendChild(o);
+    }
+    wrap.appendChild(lab);
+    wrap.appendChild(sel);
+    groupsRow.appendChild(wrap);
+    selects.push({ group: meta.id, sel, wrap });
+
+    sel.addEventListener('change', () => {
+      const id = sel.value || null;
+      // clear other selects
+      for (const s of selects) {
+        if (s.sel !== sel) {
+          s.sel.value = '';
+          s.wrap.classList.remove('active');
+        }
+      }
+      if (!id) {
+        if (active && !primary.some((p) => p.id === active)) {
+          setActiveVisual(null);
+          api.onSelectTool(null);
+        }
+        return;
+      }
+      active = id;
+      primaryRow.querySelectorAll('.symbol-btn').forEach((el) => el.classList.remove('active'));
+      wrap.classList.add('active');
+      api.onSelectTool(id);
+    });
   }
-  moreWrap.appendChild(moreLabel);
-  moreWrap.appendChild(sel);
-  palette.appendChild(moreWrap);
 
   function setActiveVisual(id: string | null): void {
     active = id;
     primaryRow.querySelectorAll('.symbol-btn').forEach((el) => {
       el.classList.toggle('active', (el as HTMLElement).dataset.def === id);
     });
-    const inSecondary = id && secondary.some((d) => d.id === id);
-    sel.value = inSecondary ? id! : '';
-    moreWrap.classList.toggle('active', !!inSecondary);
+    for (const s of selects) {
+      const inGroup = id && groupItems[s.group].some((d) => d.id === id);
+      s.sel.value = inGroup ? id! : '';
+      s.wrap.classList.toggle('active', !!inGroup);
+    }
   }
 
   function selectTool(id: string | null): void {
@@ -103,27 +142,9 @@ export function bootElectraPalette(
       ctx.clearRect(0, 0, 44, 44);
       drawElectraSymbol(ctx, symbol, 22, 20, 28, { viewScale: 1 });
     }
-    btn.addEventListener('click', () => {
-      selectTool(id);
-    });
+    btn.addEventListener('click', () => selectTool(id));
     return btn;
   }
-
-  sel.addEventListener('change', () => {
-    const id = sel.value || null;
-    if (!id) {
-      if (secondary.some((d) => d.id === active)) {
-        setActiveVisual(null);
-        api.onSelectTool(null);
-      }
-      return;
-    }
-    // select from dropdown: always activate (no toggle-off via select)
-    active = id;
-    primaryRow.querySelectorAll('.symbol-btn').forEach((el) => el.classList.remove('active'));
-    moreWrap.classList.add('active');
-    api.onSelectTool(id);
-  });
 
   planSave?.addEventListener('click', () => {
     const name = planName?.value.trim();
@@ -132,8 +153,6 @@ export function bootElectraPalette(
   });
 
   return {
-    setActiveTool: (id) => {
-      setActiveVisual(id);
-    },
+    setActiveTool: (id) => setActiveVisual(id),
   };
 }

@@ -22,7 +22,12 @@ export type ElectraSymbolId =
   | 'light-signal' // lichtpunt signalering (⊗)
   | 'light-tl' // TL-armatuur
   | 'meterkast' // meterkast / mk op plattegrond
-  | 'junction'; // las / verbindingsdoos
+  | 'junction' // las / verbindingsdoos
+  | 'centraal' // centraaldoos
+  | 'centraal-light' // centraaldoos met lichtpunt
+  | 'cable-empty' // loze leiding
+  | 'cable-wired' // bedrade leiding
+  | 'cable-earth'; // leiding met aarding
 
 export function drawElectraSymbol(
   ctx: CanvasRenderingContext2D,
@@ -102,8 +107,23 @@ export function drawElectraSymbol(
     case 'junction':
       drawJunction(ctx, s);
       break;
+    case 'centraal':
+      drawCentraal(ctx, s, false);
+      break;
+    case 'centraal-light':
+      drawCentraal(ctx, s, true);
+      break;
+    case 'cable-empty':
+      drawCable(ctx, s, 'empty');
+      break;
+    case 'cable-wired':
+      drawCable(ctx, s, 'wired');
+      break;
+    case 'cable-earth':
+      drawCable(ctx, s, 'earth');
+      break;
     default:
-      drawSocketC(ctx, s, 1, false);
+      drawSocketC(ctx, s, 1, true);
   }
 
   if (selected) {
@@ -355,4 +375,64 @@ function drawJunction(ctx: CanvasRenderingContext2D, s: number): void {
   ctx.beginPath();
   ctx.arc(0, 0, s * 0.28, 0, Math.PI * 2);
   ctx.stroke();
+}
+
+/** Centraaldoos: vierkant; optioneel + lichtpunt-X (Kenteq/elektra-info). */
+function drawCentraal(ctx: CanvasRenderingContext2D, s: number, withLight: boolean): void {
+  const a = s * 0.28;
+  ctx.strokeRect(-a, -a, a * 2, a * 2);
+  if (withLight) {
+    const x = a * 0.55;
+    ctx.beginPath();
+    ctx.moveTo(-x, -x);
+    ctx.lineTo(x, x);
+    ctx.moveTo(x, -x);
+    ctx.lineTo(-x, x);
+    ctx.stroke();
+  }
+}
+
+/** Leiding-markering op plattegrond (eenvoudig). */
+function drawCable(
+  ctx: CanvasRenderingContext2D,
+  s: number,
+  kind: 'empty' | 'wired' | 'earth',
+): void {
+  const L = s * 0.55;
+  ctx.beginPath();
+  ctx.moveTo(-L, 0);
+  ctx.lineTo(L, 0);
+  ctx.stroke();
+  // eindpunt
+  ctx.beginPath();
+  ctx.arc(L, 0, s * 0.08, 0, Math.PI * 2);
+  ctx.stroke();
+  if (kind === 'empty') {
+    // loze: stippellijn hint
+    ctx.setLineDash([s * 0.08, s * 0.08]);
+    ctx.beginPath();
+    ctx.moveTo(-L * 0.6, 0);
+    ctx.lineTo(L * 0.6, 0);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  } else if (kind === 'wired') {
+    // 3 aders als streepjes
+    for (const t of [-0.25, 0, 0.25]) {
+      const x = t * L;
+      ctx.beginPath();
+      ctx.moveTo(x, -s * 0.14);
+      ctx.lineTo(x, s * 0.14);
+      ctx.stroke();
+    }
+  } else {
+    // earth: PE-markering (⊥)
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.18);
+    ctx.lineTo(0, s * 0.12);
+    ctx.moveTo(-s * 0.16, s * 0.12);
+    ctx.lineTo(s * 0.16, s * 0.12);
+    ctx.moveTo(-s * 0.1, s * 0.2);
+    ctx.lineTo(s * 0.1, s * 0.2);
+    ctx.stroke();
+  }
 }
