@@ -55,6 +55,7 @@ export type RenderOptions = {
     y: number;
     defId: string;
     selected?: boolean;
+    rot?: number;
   }[];
 };
 
@@ -301,12 +302,15 @@ export function drawScene(
 
   // Installatie-componenten (NL-norm pictogrammen)
   if (opts.installations?.length) {
+    // vaste schermgrootte ≈ 22px, lijn/font zoom-stabiel
+    const sizeWorld = 22 / Math.max(0.05, drawScale);
     for (const inst of opts.installations) {
       const def = getInstallDef(inst.defId);
       const symbol = def?.symbol ?? 'socket';
-      drawElectraSymbol(ctx, symbol, inst.x, inst.y, 22 / Math.max(0.25, drawScale), {
+      drawElectraSymbol(ctx, symbol, inst.x, inst.y, sizeWorld, {
         selected: !!inst.selected,
-        strokeScale: 1 / Math.max(0.25, drawScale),
+        viewScale: drawScale,
+        rotDeg: inst.rot ?? 0,
       });
     }
   }

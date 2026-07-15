@@ -101,7 +101,7 @@ export function bootElectraPalette(
     const ctx = c.getContext('2d');
     if (ctx) {
       ctx.clearRect(0, 0, 44, 44);
-      drawElectraSymbol(ctx, symbol, 22, 20, 28);
+      drawElectraSymbol(ctx, symbol, 22, 20, 28, { viewScale: 1 });
     }
     btn.addEventListener('click', () => {
       selectTool(id);

@@ -1,7 +1,6 @@
 /**
- * Installatie-componenten — Elektra volgens AREI / Gamma-symbolen.
- * Bron: https://www.gamma.be/nl/doe-het-zelf/a/symbolen-elektriciteit
- * Water/afvoer later.
+ * Installatie-componenten — Elektra volgens Kenteq "Tekening"-symbolen.
+ * Bron: https://leermiddelenshop.kenteq.nl/Previews/8882292149368.pdf
  */
 import type { ElectraSymbolId } from '../canvas/symbols';
 
@@ -16,91 +15,60 @@ export type InstallComponentDef = {
   symbol: ElectraSymbolId;
 };
 
-export const INSTALL_CATEGORIES: {
-  id: InstallCategory;
-  labelNl: string;
-  short: string;
-}[] = [
-  { id: 'electric', labelNl: 'Elektrische installatie', short: 'Elektra' },
-  { id: 'water', labelNl: 'Waterinstallatie', short: 'Water' },
-  { id: 'drain', labelNl: 'Afvoerinstallatie', short: 'Afvoer' },
+export const INSTALL_CATEGORIES = [
+  { id: 'electric' as const, labelNl: 'Elektrische installatie', short: 'Elektra' },
+  { id: 'water' as const, labelNl: 'Waterinstallatie', short: 'Water' },
+  { id: 'drain' as const, labelNl: 'Afvoerinstallatie', short: 'Afvoer' },
 ];
 
-/** Catalogus — Electra eerst volledig; water/afvoer placeholders. */
 export const INSTALL_CATALOG: InstallComponentDef[] = [
-  // Contactdozen (D)
-  {
-    id: 'el-socket',
-    category: 'electric',
-    labelNl: 'Contactdoos',
-    code: 'CD',
-    color: '#e8eef7',
-    symbol: 'socket',
-  },
-  {
-    id: 'el-socket-3',
-    category: 'electric',
-    labelNl: 'Contactdoos meervoudig (3)',
-    code: 'CD3',
-    color: '#e8eef7',
-    symbol: 'socket-multi',
-  },
   {
     id: 'el-socket-pe',
     category: 'electric',
-    labelNl: 'Contactdoos met aarding',
-    code: 'CD⊥',
+    labelNl: 'Wandcontactdoos met aarding',
+    code: 'WCD⊥',
     color: '#e8eef7',
     symbol: 'socket-pe',
   },
   {
-    id: 'el-socket-child',
+    id: 'el-socket',
     category: 'electric',
-    labelNl: 'Contactdoos kinderbeveiliging',
-    code: 'CDK',
+    labelNl: 'Wandcontactdoos',
+    code: 'WCD',
     color: '#e8eef7',
-    symbol: 'socket-child',
+    symbol: 'socket',
   },
   {
-    id: 'el-socket-sw',
+    id: 'el-socket-2',
     category: 'electric',
-    labelNl: 'Contactdoos met schakelaar',
-    code: 'CDS',
+    labelNl: 'Dubbele wandcontactdoos',
+    code: 'WCD2',
     color: '#e8eef7',
-    symbol: 'socket-switched',
+    symbol: 'socket-double',
   },
-  // Schakelaars (C)
+  {
+    id: 'el-socket-4',
+    category: 'electric',
+    labelNl: 'Viervoudige contactdoos',
+    code: 'WCD4',
+    color: '#e8eef7',
+    symbol: 'socket-quad',
+  },
   {
     id: 'el-switch',
     category: 'electric',
-    labelNl: 'Schakelaar (1-polig)',
+    labelNl: 'Éénpolige schakelaar',
     code: 'S1',
     color: '#e8eef7',
-    symbol: 'switch',
+    symbol: 'switch-1p',
   },
   {
     id: 'el-switch-2',
     category: 'electric',
-    labelNl: 'Schakelaar 2-polig',
+    labelNl: 'Tweepolige schakelaar',
     code: 'S2',
     color: '#e8eef7',
     symbol: 'switch-2p',
-  },
-  {
-    id: 'el-switch-3',
-    category: 'electric',
-    labelNl: 'Schakelaar 3-polig',
-    code: 'S3',
-    color: '#e8eef7',
-    symbol: 'switch-3p',
-  },
-  {
-    id: 'el-switch-co',
-    category: 'electric',
-    labelNl: 'Omschakelaar',
-    code: 'SO',
-    color: '#e8eef7',
-    symbol: 'switch-changeover',
   },
   {
     id: 'el-switch-w',
@@ -108,7 +76,7 @@ export const INSTALL_CATALOG: InstallComponentDef[] = [
     labelNl: 'Wisselschakelaar',
     code: 'SW',
     color: '#e8eef7',
-    symbol: 'switch-intermediate',
+    symbol: 'switch-wissel',
   },
   {
     id: 'el-switch-x',
@@ -116,7 +84,15 @@ export const INSTALL_CATALOG: InstallComponentDef[] = [
     labelNl: 'Kruisschakelaar',
     code: 'SX',
     color: '#e8eef7',
-    symbol: 'switch-cross',
+    symbol: 'switch-kruis',
+  },
+  {
+    id: 'el-switch-ser',
+    category: 'electric',
+    labelNl: 'Serieschakelaar',
+    code: 'SS',
+    color: '#e8eef7',
+    symbol: 'switch-serie',
   },
   {
     id: 'el-dimmer',
@@ -135,14 +111,13 @@ export const INSTALL_CATALOG: InstallComponentDef[] = [
     symbol: 'pushbutton',
   },
   {
-    id: 'el-push-l',
+    id: 'el-combo',
     category: 'electric',
-    labelNl: 'Drukknop met lamp',
-    code: 'DKL',
+    labelNl: 'Schakelaar + WCD combinatie',
+    code: 'S+W',
     color: '#e8eef7',
-    symbol: 'pushbutton-light',
+    symbol: 'combo-sw-socket',
   },
-  // Verlichting / toestellen (E)
   {
     id: 'el-light',
     category: 'electric',
@@ -152,69 +127,58 @@ export const INSTALL_CATALOG: InstallComponentDef[] = [
     symbol: 'light',
   },
   {
-    id: 'el-light-wall',
+    id: 'el-light-sig',
     category: 'electric',
-    labelNl: 'Wandlichtpunt',
-    code: 'WL',
+    labelNl: 'Lichtpunt signalering',
+    code: 'LS',
     color: '#e8eef7',
-    symbol: 'light-wall',
+    symbol: 'light-signal',
   },
   {
-    id: 'el-fluo',
+    id: 'el-tl',
     category: 'electric',
-    labelNl: 'Fluorescentie-armatuur',
-    code: 'FL',
+    labelNl: 'TL-verlichting',
+    code: 'TL',
     color: '#e8eef7',
-    symbol: 'fluorescent',
+    symbol: 'light-tl',
   },
   {
-    id: 'el-panel',
+    id: 'el-mk',
     category: 'electric',
-    labelNl: 'Verdeelkast / bord',
-    code: 'VK',
+    labelNl: 'Meterkast',
+    code: 'MK',
     color: '#ffd166',
-    symbol: 'panel',
+    symbol: 'meterkast',
   },
   {
     id: 'el-junction',
     category: 'electric',
-    labelNl: 'Verbindingsdoos',
-    code: 'VD',
+    labelNl: 'Lasdoos / verbindingsdoos',
+    code: 'LD',
     color: '#e8eef7',
     symbol: 'junction',
   },
-  {
-    id: 'el-bell',
-    category: 'electric',
-    labelNl: 'Bel',
-    code: 'BEL',
-    color: '#e8eef7',
-    symbol: 'bell',
-  },
-  {
-    id: 'el-earth',
-    category: 'electric',
-    labelNl: 'Aarding',
-    code: '⊥',
-    color: '#3dd68c',
-    symbol: 'earth',
-  },
 ];
 
-/**
- * Meest voorkomend op situatieschema — vast in de balk.
- * Volgorde = display-volgorde.
- */
+/** Meest gebruikt op plattegrond — vaste knoppen. */
 export const ELECTRA_PRIMARY_IDS: string[] = [
-  'el-socket-pe', // contactdoos met aarding (standaard NL/BE)
-  'el-socket', // contactdoos
-  'el-socket-3', // meervoudig
-  'el-switch', // 1-polig
-  'el-switch-w', // wissel
-  'el-light', // lichtpunt
-  'el-push', // drukknop
-  'el-panel', // verdeelkast
+  'el-socket-pe',
+  'el-socket',
+  'el-socket-2',
+  'el-switch',
+  'el-switch-w',
+  'el-light',
+  'el-push',
+  'el-mk',
 ];
+
+export function catalogByCategory(cat: InstallCategory): InstallComponentDef[] {
+  return INSTALL_CATALOG.filter((c) => c.category === cat);
+}
+
+export function getInstallDef(id: string): InstallComponentDef | undefined {
+  return INSTALL_CATALOG.find((c) => c.id === id);
+}
 
 export function electraPrimary(): InstallComponentDef[] {
   return ELECTRA_PRIMARY_IDS.map((id) => getInstallDef(id)).filter(
@@ -223,16 +187,8 @@ export function electraPrimary(): InstallComponentDef[] {
 }
 
 export function electraSecondary(): InstallComponentDef[] {
-  const primary = new Set(ELECTRA_PRIMARY_IDS);
-  return catalogByCategory('electric').filter((c) => !primary.has(c.id));
-}
-
-export function catalogByCategory(cat: InstallCategory): InstallComponentDef[] {
-  return INSTALL_CATALOG.filter((c) => c.category === cat);
-}
-
-export function getInstallDef(id: string): InstallComponentDef | undefined {
-  return INSTALL_CATALOG.find((c) => c.id === id);
+  const p = new Set(ELECTRA_PRIMARY_IDS);
+  return catalogByCategory('electric').filter((c) => !p.has(c.id));
 }
 
 export type PlacedInstall = {

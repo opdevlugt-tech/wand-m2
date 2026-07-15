@@ -106,8 +106,10 @@ export function boot(root: HTMLElement): void {
     const hudDraw = root.querySelector<HTMLElement>('#hud-draw');
     const hudInstall = root.querySelector<HTMLElement>('#hud-install');
     const installDeleteBtn = root.querySelector<HTMLButtonElement>('#install-delete');
-    const installStatus = root.querySelector<HTMLElement>('#install-status');
-    const stage = root.querySelector<HTMLElement>('.stage');
+      const installRotCw = root.querySelector<HTMLButtonElement>('#install-rotate-cw');
+      const installRotCcw = root.querySelector<HTMLButtonElement>('#install-rotate-ccw');
+      const installStatus = root.querySelector<HTMLElement>('#install-status');
+      const stage = root.querySelector<HTMLElement>('.stage');
   const popup = root.querySelector<HTMLElement>('#angle-popup');
   const popupLead = root.querySelector<HTMLElement>('#angle-popup-lead');
   const oddList = root.querySelector<HTMLElement>('#popup-odd-list');
@@ -177,7 +179,9 @@ export function boot(root: HTMLElement): void {
         !hudDraw ||
         !hudInstall ||
         !installDeleteBtn ||
-        !stage ||
+            !installRotCw ||
+            !installRotCcw ||
+            !stage ||
     !popup ||
     !popupLead ||
     !oddList ||
@@ -464,6 +468,7 @@ export function boot(root: HTMLElement): void {
               y: p.y,
               defId: p.defId,
               selected: p.id === selectedInstallId,
+              rot: p.rot ?? 0,
             })),
             view,
           });
@@ -1284,11 +1289,13 @@ export function boot(root: HTMLElement): void {
           dragInstall = null;
           electraUi.setActiveTool(null);
           installDeleteBtn!.disabled = true;
-          if (installStatus) {
-            installStatus.textContent = draw
-              ? ''
-              : 'Kies pictogram · klik op tekening om te plaatsen · sleep om te verplaatsen';
-          }
+                    installRotCw!.disabled = true;
+                    installRotCcw!.disabled = true;
+                    if (installStatus) {
+                      installStatus.textContent = draw
+                        ? ''
+                        : 'Kies Kenteq-symbool · klik plaatsen · sleep · ↺/↻ of Q/E draaien';
+                    }
           layout();
           paint();
         }
@@ -1305,12 +1312,14 @@ export function boot(root: HTMLElement): void {
                     placeToolId = defId;
                     selectedInstallId = null;
                     installDeleteBtn!.disabled = true;
-                    if (installStatus) {
-                      const def = defId ? getInstallDef(defId) : null;
-                      installStatus.textContent = def
-                        ? `Plaatsen: ${def.labelNl} — klik op de tekening`
-                        : 'Kies pictogram · klik op tekening · sleep om te verplaatsen';
-                    }
+                                        installRotCw!.disabled = true;
+                                        installRotCcw!.disabled = true;
+                                        if (installStatus) {
+                                          const def = defId ? getInstallDef(defId) : null;
+                                          installStatus.textContent = def
+                                            ? `Plaatsen: ${def.labelNl} — klik op de tekening`
+                                            : 'Kies pictogram · klik · sleep · Q/E draaien';
+                                        }
                     paint();
                   },
                   onSave: () => {
@@ -1354,25 +1363,30 @@ export function boot(root: HTMLElement): void {
             placeToolId = null;
             electraUi.setActiveTool(null);
             installDeleteBtn!.disabled = false;
-            canvas!.setPointerCapture(e.pointerId);
-            paint();
-            return;
-          }
-          if (placeToolId) {
-            const item: PlacedInstall = {
-              id: newPlaceId(),
-              defId: placeToolId,
-              x: p.x,
-              y: p.y,
-              loopId: null,
-              note: '',
-            };
-            installations = [...installations, item];
-            selectedInstallId = item.id;
-            installDeleteBtn!.disabled = false;
-            persistLocal();
-            paint();
-          }
+                        installRotCw!.disabled = false;
+                        installRotCcw!.disabled = false;
+                        canvas!.setPointerCapture(e.pointerId);
+                        paint();
+                        return;
+                      }
+                      if (placeToolId) {
+                        const item: PlacedInstall = {
+                          id: newPlaceId(),
+                          defId: placeToolId,
+                          x: p.x,
+                          y: p.y,
+                          loopId: null,
+                          note: '',
+                          rot: 0,
+                        };
+                        installations = [...installations, item];
+                        selectedInstallId = item.id;
+                        installDeleteBtn!.disabled = false;
+                        installRotCw!.disabled = false;
+                        installRotCcw!.disabled = false;
+                        persistLocal();
+                        paint();
+                      }
         });
         canvas!.addEventListener('pointermove', (e) => {
           if (appMode !== 'install' || !dragInstall) return;
@@ -1397,32 +1411,70 @@ export function boot(root: HTMLElement): void {
           }
         });
 
-        installDeleteBtn!.addEventListener('click', () => {
-          if (!selectedInstallId) return;
-          installations = installations.filter((x) => x.id !== selectedInstallId);
-          selectedInstallId = null;
-          installDeleteBtn!.disabled = true;
-          persistLocal();
-          paint();
-        });
+        function setInstallSelUi(has: boolean): void {
+                  installDeleteBtn!.disabled = !has;
+                  installRotCw!.disabled = !has;
+                  installRotCcw!.disabled = !has;
+                }
 
-        resetBtn.addEventListener('click', () => {
-          if (popupState) dismissPopup();
-          if (splitState) closeSplitPanel();
-          controller.reset();
-          installations = [];
-          activePlanId = null;
-          activePlanName = '';
-          selectedInstallId = null;
-          placeToolId = null;
-          const nameInput = root.querySelector<HTMLInputElement>('#plan-name');
-          if (nameInput) nameInput.value = '';
-          syncLengthFieldFromSelection();
-          syncAngleFieldFromSelection();
-          syncDoorFieldFromSelection();
-          updateHud(controller.model);
-          paint();
-        });
+                // patch switchTab disable
+                // --- rotate ---
+                function rotateSelected(delta: number): void {
+                  if (!selectedInstallId) return;
+                  installations = installations.map((it) => {
+                    if (it.id !== selectedInstallId) return it;
+                    const rot = (((it.rot ?? 0) + delta) % 360 + 360) % 360;
+                    return { ...it, rot };
+                  });
+                  persistLocal();
+                  paint();
+                }
+                installRotCw!.addEventListener('click', () => rotateSelected(45));
+                installRotCcw!.addEventListener('click', () => rotateSelected(-45));
+                window.addEventListener('keydown', (e) => {
+                  if (appMode !== 'install' || !selectedInstallId) return;
+                  const t = e.target as HTMLElement | null;
+                  if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA'))
+                    return;
+                  if (e.key === 'e' || e.key === 'E') {
+                    e.preventDefault();
+                    rotateSelected(45);
+                  } else if (e.key === 'q' || e.key === 'Q') {
+                    e.preventDefault();
+                    rotateSelected(-45);
+                  } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                    e.preventDefault();
+                    installDeleteBtn!.click();
+                  }
+                });
+
+                installDeleteBtn!.addEventListener('click', () => {
+                  if (!selectedInstallId) return;
+                  installations = installations.filter((x) => x.id !== selectedInstallId);
+                  selectedInstallId = null;
+                  setInstallSelUi(false);
+                  persistLocal();
+                  paint();
+                });
+
+                resetBtn.addEventListener('click', () => {
+                  if (popupState) dismissPopup();
+                  if (splitState) closeSplitPanel();
+                  controller.reset();
+                  installations = [];
+                  activePlanId = null;
+                  activePlanName = '';
+                  selectedInstallId = null;
+                  placeToolId = null;
+                  setInstallSelUi(false);
+                  const nameInput = root.querySelector<HTMLInputElement>('#plan-name');
+                  if (nameInput) nameInput.value = '';
+                  syncLengthFieldFromSelection();
+                  syncAngleFieldFromSelection();
+                  syncDoorFieldFromSelection();
+                  updateHud(controller.model);
+                  paint();
+                });
         pxInput.addEventListener('change', () => {
           syncLengthFieldFromSelection();
           updateHud(controller.model);
