@@ -879,10 +879,23 @@ body {
   color: #8b9bb0;
   font-weight: 400;
 }
-.plan-empty {
-  color: #6a7a8c;
-  font-size: 0.8rem;
-  padding: 0.5rem 0;
+.plan-item-current .plan-current-card {
+  flex: 1;
+  padding: 0.45rem 0.55rem;
+  border: 1px dashed #3dd68c;
+  border-radius: 8px;
+  background: rgba(21, 36, 28, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.plan-item-current .plan-current-card span {
+  font-size: 0.72rem;
+  color: #8b9bb0;
+  font-weight: 400;
+}
+.plan-item-active .plan-open {
+  border-color: #3dd68c;
 }
 .install-cats {
   display: flex;

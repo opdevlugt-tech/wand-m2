@@ -1198,149 +1198,181 @@ export function boot(root: HTMLElement): void {
   }
 
   saveBtn.addEventListener('click', () => {
-    const doc = buildSavePayload();
-    activePlanId = doc.id;
-    activePlanName = doc.name;
-    upsertPlan(doc);
-    persistLocal();
-    const blob = new Blob([JSON.stringify(doc, null, 2)], {
-      type: 'application/json',
+      const nameInput = root.querySelector<HTMLInputElement>('#plan-name');
+      const nameFromField = nameInput?.value.trim() ?? '';
+      if (nameFromField) activePlanName = nameFromField;
+      if (!activePlanName.trim()) {
+        const d = new Date();
+        activePlanName = `Plan ${d.toLocaleDateString('nl-NL')} ${d.toLocaleTimeString(
+          'nl-NL',
+          { hour: '2-digit', minute: '2-digit' },
+        )}`;
+        if (nameInput) nameInput.value = activePlanName;
+      }
+
+      const doc = createPlanDoc(
+        activePlanName,
+        controller.model,
+        getPxPerMeter(),
+        installations,
+        activePlanId ?? undefined,
+      );
+      activePlanId = doc.id;
+      activePlanName = doc.name;
+      upsertPlan(doc);
+      persistLocal();
+
+      const blob = new Blob([JSON.stringify(doc, null, 2)], {
+        type: 'application/json',
+      });
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      a.href = URL.createObjectURL(blob);
+      a.download = `wand-m2-${stamp}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      statusEl!.textContent = `Opgeslagen in bibliotheek: ${doc.name}`;
+      installPanel.refreshAll();
     });
-    const a = document.createElement('a');
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    a.href = URL.createObjectURL(blob);
-    a.download = `wand-m2-${stamp}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    statusEl!.textContent = 'Opgeslagen (bibliotheek + bestand)';
-    root.dispatchEvent(new Event('install-refresh'));
-  });
 
-  exportPngBtn.addEventListener('click', () => exportPng());
+    exportPngBtn.addEventListener('click', () => exportPng());
 
-  loadBtn.addEventListener('click', () => loadFile!.click());
-  loadFile.addEventListener('change', async () => {
-    const file = loadFile.files?.[0];
-    loadFile.value = '';
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      if (!applyLoadedPayload(data)) {
-        statusEl!.textContent = 'Ongeldig bestand';
-        return;
+    loadBtn.addEventListener('click', () => loadFile!.click());
+    loadFile.addEventListener('change', async () => {
+      const file = loadFile.files?.[0];
+      loadFile.value = '';
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (!applyLoadedPayload(data)) {
+          statusEl!.textContent = 'Ongeldig bestand';
+          return;
+        }
+        const doc = createPlanDoc(
+          activePlanName || file.name.replace(/\.json$/i, '') || 'Geïmporteerd',
+          controller.model,
+          getPxPerMeter(),
+          installations,
+          activePlanId ?? undefined,
+        );
+        activePlanId = doc.id;
+        activePlanName = doc.name;
+        upsertPlan(doc);
+        persistLocal();
+        installPanel.refreshAll();
+        statusEl!.textContent = `Geladen + in bibliotheek: ${doc.name}`;
+      } catch {
+        statusEl!.textContent = 'Laden mislukt';
       }
-      persistLocal();
-      statusEl!.textContent = `Geladen: ${file.name}`;
-    } catch {
-      statusEl!.textContent = 'Laden mislukt';
+    });
+
+    function switchTab(which: 'draw' | 'install'): void {
+      const draw = which === 'draw';
+      tabDraw!.classList.toggle('active', draw);
+      tabInstall!.classList.toggle('active', !draw);
+      tabDraw!.setAttribute('aria-selected', draw ? 'true' : 'false');
+      tabInstall!.setAttribute('aria-selected', draw ? 'false' : 'true');
+      panelDraw!.classList.toggle('active', draw);
+      panelInstall!.classList.toggle('active', !draw);
+      if (draw) {
+        panelDraw!.hidden = false;
+        panelInstall!.hidden = true;
+        layout();
+        paint();
+      } else {
+        panelDraw!.hidden = true;
+        panelInstall!.hidden = false;
+        installPanel.refreshAll();
+      }
     }
-  });
+    tabDraw.addEventListener('click', () => switchTab('draw'));
+    tabInstall.addEventListener('click', () => switchTab('install'));
 
-  function switchTab(which: 'draw' | 'install'): void {
-    const draw = which === 'draw';
-    tabDraw!.classList.toggle('active', draw);
-    tabInstall!.classList.toggle('active', !draw);
-    tabDraw!.setAttribute('aria-selected', draw ? 'true' : 'false');
-    tabInstall!.setAttribute('aria-selected', draw ? 'false' : 'true');
-    panelDraw!.classList.toggle('active', draw);
-    panelInstall!.classList.toggle('active', !draw);
-    if (draw) {
-      panelDraw!.hidden = false;
-      panelInstall!.hidden = true;
-      layout();
+    const installPanel = bootInstallPanel(root, {
+      getModel: () => controller.model,
+      getPxPerMeter,
+      getInstallations: () => installations,
+      setInstallations: (items) => {
+        installations = items;
+      },
+      openPlan: (plan) => {
+        applyPlanDocument(plan);
+        switchTab('draw');
+        statusEl!.textContent = `Plan geopend: ${plan.name}`;
+      },
+      getActivePlanMeta: () => ({ id: activePlanId, name: activePlanName }),
+      setActivePlanMeta: (id, name) => {
+        activePlanId = id;
+        activePlanName = name;
+      },
+      getSelectedLoopCentroid: () => {
+        const li = controller.selectedLoopIndex();
+        if (li === null) return null;
+        const L = controller.model.loops[li];
+        if (!L?.vertices.length) return null;
+        let x = 0;
+        let y = 0;
+        for (const p of L.vertices) {
+          x += p.x;
+          y += p.y;
+        }
+        return {
+          x: x / L.vertices.length,
+          y: y / L.vertices.length,
+          loopId: L.id,
+        };
+      },
+      getPlanCentroid: () => {
+        const pts: { x: number; y: number }[] = [];
+        for (const L of controller.model.loops) {
+          for (const p of L.vertices) pts.push(p);
+        }
+        for (const p of controller.model.vertices) pts.push(p);
+        if (!pts.length) return { x: 200, y: 200 };
+        let x = 0;
+        let y = 0;
+        for (const p of pts) {
+          x += p.x;
+          y += p.y;
+        }
+        return { x: x / pts.length, y: y / pts.length };
+      },
+      onChange: () => {
+        paint();
+        persistLocal();
+      },
+    });
+
+    resetBtn.addEventListener('click', () => {
+      if (popupState) dismissPopup();
+      if (splitState) closeSplitPanel();
+      controller.reset();
+      installations = [];
+      activePlanId = null;
+      activePlanName = '';
+      const nameInput = root.querySelector<HTMLInputElement>('#plan-name');
+      if (nameInput) nameInput.value = '';
+      syncLengthFieldFromSelection();
+      syncAngleFieldFromSelection();
+      syncDoorFieldFromSelection();
+      updateHud(controller.model);
       paint();
-    } else {
-      panelDraw!.hidden = true;
-      panelInstall!.hidden = false;
-      root.dispatchEvent(new Event('install-refresh'));
-    }
-  }
-  tabDraw.addEventListener('click', () => switchTab('draw'));
-  tabInstall.addEventListener('click', () => switchTab('install'));
-
-  bootInstallPanel(root, {
-    getModel: () => controller.model,
-    getPxPerMeter,
-    getInstallations: () => installations,
-    setInstallations: (items) => {
-      installations = items;
-    },
-    openPlan: (plan) => {
-      applyPlanDocument(plan);
-      switchTab('draw');
-      statusEl!.textContent = `Plan geopend: ${plan.name}`;
-    },
-    getActivePlanMeta: () => ({ id: activePlanId, name: activePlanName }),
-    setActivePlanMeta: (id, name) => {
-      activePlanId = id;
-      activePlanName = name;
-    },
-    getSelectedLoopCentroid: () => {
-      const li = controller.selectedLoopIndex();
-      if (li === null) return null;
-      const L = controller.model.loops[li];
-      if (!L?.vertices.length) return null;
-      let x = 0;
-      let y = 0;
-      for (const p of L.vertices) {
-        x += p.x;
-        y += p.y;
-      }
-      return {
-        x: x / L.vertices.length,
-        y: y / L.vertices.length,
-        loopId: L.id,
-      };
-    },
-    getPlanCentroid: () => {
-      const pts: { x: number; y: number }[] = [];
-      for (const L of controller.model.loops) {
-        for (const p of L.vertices) pts.push(p);
-      }
-      for (const p of controller.model.vertices) pts.push(p);
-      if (!pts.length) return { x: 200, y: 200 };
-      let x = 0;
-      let y = 0;
-      for (const p of pts) {
-        x += p.x;
-        y += p.y;
-      }
-      return { x: x / pts.length, y: y / pts.length };
-    },
-    onChange: () => {
+      installPanel.refreshAll();
+    });
+    pxInput.addEventListener('change', () => {
+      syncLengthFieldFromSelection();
+      updateHud(controller.model);
       paint();
-      persistLocal();
-    },
-  });
+    });
+    pxInput.addEventListener('input', () => {
+      syncLengthFieldFromSelection();
+      updateHud(controller.model);
+      paint();
+    });
 
-  resetBtn.addEventListener('click', () => {
-    if (popupState) dismissPopup();
-    if (splitState) closeSplitPanel();
-    controller.reset();
-    installations = [];
-    activePlanId = null;
-    activePlanName = '';
-    syncLengthFieldFromSelection();
-    syncAngleFieldFromSelection();
-    syncDoorFieldFromSelection();
-    updateHud(controller.model);
-    paint();
-    root.dispatchEvent(new Event('install-refresh'));
-  });
-  pxInput.addEventListener('change', () => {
-    syncLengthFieldFromSelection();
-    updateHud(controller.model);
-    paint();
-  });
-  pxInput.addEventListener('input', () => {
-    syncLengthFieldFromSelection();
-    updateHud(controller.model);
-    paint();
-  });
-
-  wallLengthInput.addEventListener('change', () => applyTypedLength());
-  wallLengthInput.addEventListener('keydown', (e) => {
+    wallLengthInput.addEventListener('change', () => applyTypedLength());
+    wallLengthInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       applyTypedLength();

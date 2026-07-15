@@ -29,9 +29,21 @@ export type InstallPanelApi = {
   getSelectedLoopCentroid: () => { x: number; y: number; loopId: string | null } | null;
   getPlanCentroid: () => { x: number; y: number };
   onChange: () => void;
+  /** Prompt for plan name when saving from panel */
+  getPlanNameInput?: () => string;
 };
 
-export function bootInstallPanel(root: HTMLElement, api: InstallPanelApi): void {
+export type InstallPanelHandle = {
+  /** Full UI refresh (library + placed + label) */
+  refreshAll: () => void;
+  /** After tab1 Opslaan: library already updated — just re-render list */
+  refreshLibrary: () => void;
+};
+
+export function bootInstallPanel(
+  root: HTMLElement,
+  api: InstallPanelApi,
+): InstallPanelHandle {
   const planName = root.querySelector<HTMLInputElement>('#plan-name');
   const planSaveLib = root.querySelector<HTMLButtonElement>('#plan-save-lib');
   const planLibrary = root.querySelector<HTMLElement>('#plan-library');
@@ -49,7 +61,7 @@ export function bootInstallPanel(root: HTMLElement, api: InstallPanelApi): void 
     !installActivePlan
   ) {
     console.warn('install panel missing nodes');
-    return;
+    return { refreshAll: () => {}, refreshLibrary: () => {} };
   }
 
   let activeCat: InstallCategory = 'electric';
@@ -57,13 +69,48 @@ export function bootInstallPanel(root: HTMLElement, api: InstallPanelApi): void 
   function refreshLibrary(): void {
     const lib = readLibrary();
     planLibrary!.innerHTML = '';
-    if (!lib.length) {
-      planLibrary!.innerHTML = '<li class="plan-empty">Nog geen plannen opgeslagen.</li>';
+
+    // Always show current unsaved/working plan at top if it has geometry
+    const model = api.getModel();
+    const roomsNow = model.loops?.length ?? 0;
+    const vertsNow = model.vertices?.length ?? 0;
+    const hasWork = roomsNow > 0 || vertsNow > 0;
+    const meta = api.getActivePlanMeta();
+
+    if (hasWork) {
+      const li = document.createElement('li');
+      li.className = 'plan-item plan-item-current';
+      const inLib = meta.id && lib.some((p) => p.id === meta.id);
+      li.innerHTML = `
+        <div class="plan-open plan-current-card">
+          <strong>${escapeHtml(meta.name || 'Huidig plan')}</strong>
+          <span>${roomsNow} kamer(s) · ${api.getInstallations().length} install.${
+            inLib ? ' · in bibliotheek' : ' · nog niet in lijst — klik Opslaan'
+          }</span>
+        </div>
+      `;
+      planLibrary!.appendChild(li);
+    }
+
+    if (!lib.length && !hasWork) {
+      planLibrary!.innerHTML =
+        '<li class="plan-empty">Nog geen plannen. Teken op Plattegrond en druk <strong>Opslaan</strong>.</li>';
       return;
     }
+
+    if (!lib.length && hasWork) {
+      const tip = document.createElement('li');
+      tip.className = 'plan-empty';
+      tip.textContent =
+        'Bibliotheek leeg — druk Opslaan op Plattegrond om hier te bewaren.';
+      planLibrary!.appendChild(tip);
+      return;
+    }
+
     for (const p of lib) {
       const li = document.createElement('li');
       li.className = 'plan-item';
+      if (meta.id === p.id) li.classList.add('plan-item-active');
       const rooms = p.model.loops?.length ?? 0;
       const inst = p.installations?.length ?? 0;
       const when = new Date(p.savedAt).toLocaleString('nl-NL', {
@@ -71,34 +118,35 @@ export function bootInstallPanel(root: HTMLElement, api: InstallPanelApi): void 
         timeStyle: 'short',
       });
       li.innerHTML = `
-        <button type="button" class="plan-open btn" data-id="${p.id}">
+        <button type="button" class="plan-open btn" data-id="${escapeAttr(p.id)}">
           <strong>${escapeHtml(p.name)}</strong>
           <span>${rooms} kamer(s) · ${inst} install. · ${when}</span>
         </button>
-        <button type="button" class="plan-del btn btn-danger" data-id="${p.id}" title="Verwijderen">×</button>
+        <button type="button" class="plan-del btn btn-danger" data-id="${escapeAttr(p.id)}" title="Verwijderen">×</button>
       `;
       planLibrary!.appendChild(li);
     }
-    planLibrary!.querySelectorAll('.plan-open').forEach((btn) => {
+
+    planLibrary!.querySelectorAll('.plan-open[data-id]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const id = (btn as HTMLElement).dataset.id!;
         const plan = readLibrary().find((x) => x.id === id);
-        if (plan) {
-          api.openPlan(plan);
-          api.setActivePlanMeta(plan.id, plan.name);
-          planName!.value = plan.name;
-          refreshPlaced();
-          refreshActiveLabel();
-        }
+        if (!plan) return;
+        api.openPlan(plan);
+        planName!.value = plan.name;
+        refreshPlaced();
+        refreshActiveLabel();
+        refreshLibrary();
       });
     });
     planLibrary!.querySelectorAll('.plan-del').forEach((btn) => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const id = (btn as HTMLElement).dataset.id!;
         if (!confirm('Plan uit bibliotheek verwijderen?')) return;
         deletePlan(id);
-        const meta = api.getActivePlanMeta();
-        if (meta.id === id) api.setActivePlanMeta(null, '');
+        const m = api.getActivePlanMeta();
+        if (m.id === id) api.setActivePlanMeta(null, '');
         refreshLibrary();
         refreshActiveLabel();
       });
@@ -114,14 +162,13 @@ export function bootInstallPanel(root: HTMLElement, api: InstallPanelApi): void 
       li.innerHTML = `
         <span class="catalog-code" style="border-color:${c.color};color:${c.color}">${c.code}</span>
         <span class="catalog-label">${escapeHtml(c.labelNl)}</span>
-        <button type="button" class="btn btn-primary catalog-add" data-def="${c.id}">+</button>
+        <button type="button" class="btn btn-primary catalog-add" data-def="${escapeAttr(c.id)}">+</button>
       `;
       installCatalog!.appendChild(li);
     }
     installCatalog!.querySelectorAll('.catalog-add').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const defId = (btn as HTMLElement).dataset.def!;
-        placeComponent(defId);
+        placeComponent((btn as HTMLElement).dataset.def!);
       });
     });
   }
@@ -139,8 +186,7 @@ export function bootInstallPanel(root: HTMLElement, api: InstallPanelApi): void 
       loopId: sel?.loopId ?? null,
       note: '',
     };
-    const next = [...api.getInstallations(), item];
-    api.setInstallations(next);
+    api.setInstallations([...api.getInstallations(), item]);
     api.onChange();
     refreshPlaced();
   }
@@ -149,7 +195,8 @@ export function bootInstallPanel(root: HTMLElement, api: InstallPanelApi): void 
     const items = api.getInstallations();
     installPlaced!.innerHTML = '';
     if (!items.length) {
-      installPlaced!.innerHTML = '<li class="plan-empty">Nog geen componenten geplaatst.</li>';
+      installPlaced!.innerHTML =
+        '<li class="plan-empty">Nog geen componenten. Kies hierboven en druk +.</li>';
       return;
     }
     for (const p of items) {
@@ -162,9 +209,9 @@ export function bootInstallPanel(root: HTMLElement, api: InstallPanelApi): void 
         <span class="catalog-code" style="border-color:${def?.color ?? '#888'};color:${def?.color ?? '#888'}">${def?.code ?? '?'}</span>
         <span class="placed-meta">
           <strong>${escapeHtml(def?.labelNl ?? p.defId)}</strong>
-          <span>${cat} · (${p.x.toFixed(0)}, ${p.y.toFixed(0)})</span>
+          <span>${cat}</span>
         </span>
-        <button type="button" class="btn btn-danger placed-del" data-id="${p.id}">×</button>
+        <button type="button" class="btn btn-danger placed-del" data-id="${escapeAttr(p.id)}">×</button>
       `;
       installPlaced!.appendChild(li);
     }
@@ -180,14 +227,26 @@ export function bootInstallPanel(root: HTMLElement, api: InstallPanelApi): void 
 
   function refreshActiveLabel(): void {
     const meta = api.getActivePlanMeta();
+    const rooms = api.getModel().loops?.length ?? 0;
     installActivePlan!.textContent = meta.name
-      ? `${meta.name}${meta.id ? ` (${meta.id})` : ''}`
-      : '— huidig plan (niet in bibliotheek) —';
+      ? `${meta.name}${meta.id ? '' : ' (niet opgeslagen)'}`
+      : rooms
+        ? 'Huidig plan (druk Opslaan om in bibliotheek te zetten)'
+        : '— geen plan —';
+    if (meta.name && planName && !planName.value) planName.value = meta.name;
+  }
+
+  function refreshAll(): void {
+    refreshLibrary();
+    refreshPlaced();
+    refreshActiveLabel();
   }
 
   installCats!.querySelectorAll('.install-cat').forEach((btn) => {
     btn.addEventListener('click', () => {
-      installCats!.querySelectorAll('.install-cat').forEach((b) => b.classList.remove('active'));
+      installCats!.querySelectorAll('.install-cat').forEach((b) =>
+        b.classList.remove('active'),
+      );
       btn.classList.add('active');
       activeCat = (btn as HTMLElement).dataset.cat as InstallCategory;
       refreshCatalog();
@@ -196,7 +255,8 @@ export function bootInstallPanel(root: HTMLElement, api: InstallPanelApi): void 
 
   planSaveLib!.addEventListener('click', () => {
     const meta = api.getActivePlanMeta();
-    const name = planName!.value.trim() || meta.name || 'Plan';
+    const name =
+      planName!.value.trim() || meta.name || defaultPlanName();
     const doc = createPlanDoc(
       name,
       api.getModel(),
@@ -207,21 +267,22 @@ export function bootInstallPanel(root: HTMLElement, api: InstallPanelApi): void 
     upsertPlan(doc);
     api.setActivePlanMeta(doc.id, doc.name);
     planName!.value = doc.name;
-    refreshLibrary();
-    refreshActiveLabel();
+    refreshAll();
+    api.onChange();
   });
 
-  // public refresh hooks via custom events
-  root.addEventListener('install-refresh', () => {
-    refreshLibrary();
-    refreshPlaced();
-    refreshActiveLabel();
-  });
-
-  refreshLibrary();
   refreshCatalog();
-  refreshPlaced();
-  refreshActiveLabel();
+  refreshAll();
+
+  return { refreshAll, refreshLibrary };
+}
+
+function defaultPlanName(): string {
+  const d = new Date();
+  return `Plan ${d.toLocaleDateString('nl-NL')} ${d.toLocaleTimeString('nl-NL', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })}`;
 }
 
 function escapeHtml(s: string): string {
@@ -230,4 +291,8 @@ function escapeHtml(s: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function escapeAttr(s: string): string {
+  return escapeHtml(s).replace(/'/g, '&#39;');
 }
