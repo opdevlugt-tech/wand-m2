@@ -2,14 +2,12 @@ import type { DrawingModel, Point } from './geometry/types';
 import {
   absorbErrorAtCorner,
   cornerAngleAt,
-  dist,
   formatArea,
   formatDegrees,
   isCanonicalAngle,
   lengthM,
   listNonCanonicalCorners,
-  polygonAreaM2,
-  scaleFromTypedLength,
+  totalLoopsAreaM2,
   type InteriorExterior,
 } from './geometry/math';
 import { DrawingController } from './canvas/interaction';
@@ -150,10 +148,14 @@ export function boot(root: HTMLElement): void {
     });
     if (popupState && !popup!.classList.contains('hidden')) {
       popupLead!.textContent = tr.meetfoutLead(popupState.odd.length);
-      const verts = relocatePreview ?? controller.model.vertices;
+      const li = controller.meetfoutLoopIndex;
+      const verts =
+        relocatePreview ??
+        (li !== null ? controller.model.loops[li]?.vertices : null) ??
+        [];
       refreshOddListFromVertices(verts, popupState.absorbIndex);
-      if (popupState.mode === 'relocate') {
-        renderCornerPicks(controller.model.vertices.length, popupState.absorbIndex ?? 0);
+      if (popupState.mode === 'relocate' && verts.length >= 3) {
+        renderCornerPicks(verts.length, popupState.absorbIndex ?? 0);
       }
     }
     updateHud(controller.model);
@@ -197,7 +199,7 @@ export function boot(root: HTMLElement): void {
         paint();
       }, 280);
     },
-    onWallSelected: (_index, focusInput) => {
+    onWallSelected: (_sel, focusInput) => {
       if (popupState) return;
       syncLengthFieldFromSelection();
       syncAngleFieldFromSelection();
@@ -208,7 +210,7 @@ export function boot(root: HTMLElement): void {
         });
       }
     },
-    onVertexSelected: (_index, focusAngle) => {
+    onVertexSelected: (_sel, focusAngle) => {
       if (popupState) return;
       syncLengthFieldFromSelection();
       syncAngleFieldFromSelection();
@@ -219,26 +221,38 @@ export function boot(root: HTMLElement): void {
         });
       }
     },
-    onCloseMeetfout: (odd) => {
-      showMeetfoutPopup(odd);
+    onCloseMeetfout: (loopIndex, odd) => {
+      showMeetfoutPopup(loopIndex, odd);
     },
   });
 
   function displayModel(): DrawingModel {
-    if (relocatePreview && controller.model.status === 'closed') {
-      return { ...controller.model, vertices: relocatePreview, draftEnd: null };
+    const model = controller.model;
+    if (
+      relocatePreview &&
+      controller.meetfoutLoopIndex !== null &&
+      model.loops[controller.meetfoutLoopIndex]
+    ) {
+      const li = controller.meetfoutLoopIndex;
+      const loops = model.loops.map((L, i) =>
+        i === li ? { ...L, vertices: relocatePreview! } : L,
+      );
+      return { ...model, loops };
     }
-    return controller.model;
+    return model;
   }
 
   function paint(): void {
     const model = displayModel();
+    const sel = controller.selection;
     drawScene(ctx!, cssW, cssH, model, {
       pxPerMeter: getPxPerMeter(),
       hitRadius: HIT,
       rejectFlash,
-      selectedWallIndex: controller.selectedWallIndex,
-      selectedVertexIndex: controller.selectedVertexIndex,
+      selectedLoopIndex:
+        sel.kind === 'wall' || sel.kind === 'vertex' ? sel.loopIndex : null,
+      selectedWallIndex: sel.kind === 'wall' ? sel.wallIndex : null,
+      selectedVertexIndex: sel.kind === 'vertex' ? sel.vertexIndex : null,
       popupCornerIndex:
         popupState?.mode === 'relocate'
           ? popupState.absorbIndex
@@ -247,6 +261,7 @@ export function boot(root: HTMLElement): void {
         popupState?.mode === 'relocate' && relocatePreview && relocateBase
           ? relocateBase
           : null,
+      ghostLoopIndex: controller.meetfoutLoopIndex,
     });
   }
 
@@ -269,12 +284,14 @@ export function boot(root: HTMLElement): void {
     oddList!.innerHTML = rows.join('');
   }
 
-  function showMeetfoutPopup(odd: OddCorner[]): void {
-    relocateBase = controller.model.vertices.map((p) => ({ ...p }));
+  function showMeetfoutPopup(loopIndex: number, odd: OddCorner[]): void {
+    const loop = controller.model.loops[loopIndex];
+    relocateBase = loop ? loop.vertices.map((p) => ({ ...p })) : null;
     relocatePreview = null;
+    controller.meetfoutLoopIndex = loopIndex;
     popupState = { odd, mode: 'review', absorbIndex: null };
     popupLead!.textContent = tr.meetfoutLead(odd.length);
-    refreshOddListFromVertices(controller.model.vertices, null);
+    refreshOddListFromVertices(loop?.vertices ?? [], null);
     mainActions!.classList.remove('hidden');
     relocatePanel!.classList.add('hidden');
     resetPopupPosition();
@@ -354,8 +371,11 @@ export function boot(root: HTMLElement): void {
 
   function setRelocatePreview(absorbIndex: number): void {
     if (!relocateBase) {
-      relocateBase = controller.model.vertices.map((p) => ({ ...p }));
+      const li = controller.meetfoutLoopIndex;
+      const loop = li !== null ? controller.model.loops[li] : null;
+      relocateBase = loop ? loop.vertices.map((p) => ({ ...p })) : null;
     }
+    if (!relocateBase) return;
     relocatePreview = absorbErrorAtCorner(relocateBase, absorbIndex);
     if (popupState) {
       popupState = { ...popupState, absorbIndex, mode: 'relocate' };
@@ -368,11 +388,16 @@ export function boot(root: HTMLElement): void {
 
   function enterRelocateMode(): void {
     if (!popupState) return;
-    const n = controller.model.vertices.length;
+    const li = controller.meetfoutLoopIndex;
+    const n =
+      li !== null && controller.model.loops[li]
+        ? controller.model.loops[li].vertices.length
+        : 0;
+    if (n < 3) return;
     if (!relocateBase) {
-      relocateBase = controller.model.vertices.map((p) => ({ ...p }));
+      relocateBase = controller.model.loops[li!].vertices.map((p) => ({ ...p }));
     }
-    const defaultAbs = popupState.odd[0]?.index ?? Math.max(0, n - 1);
+    const defaultAbs = popupState.odd[0]?.index ?? 0;
     popupState = { ...popupState, mode: 'relocate', absorbIndex: defaultAbs };
     mainActions!.classList.add('hidden');
     relocatePanel!.classList.remove('hidden');
@@ -382,9 +407,13 @@ export function boot(root: HTMLElement): void {
   }
 
   function renderCornerPicks(n: number, selected: number): void {
-    const oddSet = new Set(
-      listNonCanonicalCorners(relocateBase ?? controller.model.vertices, true),
-    );
+    const base =
+      relocateBase ??
+      (controller.meetfoutLoopIndex !== null
+        ? controller.model.loops[controller.meetfoutLoopIndex]?.vertices
+        : null) ??
+      [];
+    const oddSet = new Set(listNonCanonicalCorners(base, true));
     cornerPicks!.innerHTML = '';
     for (let i = 0; i < n; i++) {
       const btn = document.createElement('button');
@@ -465,22 +494,15 @@ export function boot(root: HTMLElement): void {
 
   function applyTypedLength(): void {
     if (syncingLengthField) return;
-    const seg = controller.getSelectedSegment();
-    if (!seg) return;
+    if (controller.selection.kind !== 'wall') return;
     const meters = Number(wallLengthInput!.value.replace(',', '.'));
-    const pxLen = dist(seg.a, seg.b);
-    const ppm = scaleFromTypedLength(pxLen, meters);
-    if (ppm === null) {
+    if (!controller.applyWallLengthM(meters)) {
       syncLengthFieldFromSelection();
       return;
     }
-    pxInput!.value =
-      ppm >= 20 ? String(Math.round(ppm * 10) / 10) : String(Math.round(ppm * 100) / 100);
+    syncLengthFieldFromSelection();
     updateHud(controller.model);
     paint();
-    syncingLengthField = true;
-    wallLengthInput!.value = meters.toFixed(2);
-    syncingLengthField = false;
   }
 
   function applyTypedAngle(): void {
@@ -501,50 +523,49 @@ export function boot(root: HTMLElement): void {
 
   function updateHud(model: DrawingModel): void {
     const ppm = getPxPerMeter();
-    const hasWall = controller.selectedWallIndex !== null;
-    const hasVert = controller.selectedVertexIndex !== null;
-    const closed = model.status === 'closed';
+    const hasWall = controller.selection.kind === 'wall';
+    const hasVert = controller.selection.kind === 'vertex';
+    const nLoops = model.loops.length;
+    const totalArea = totalLoopsAreaM2(model.loops, ppm);
 
-    if (closed && model.vertices.length >= 3) {
-      const a = polygonAreaM2(model.vertices, ppm);
-      const text = formatArea(a);
-      areaBadge!.textContent = text;
+    if (nLoops > 0) {
+      const text = formatArea(totalArea);
+      areaBadge!.textContent =
+        nLoops === 1 ? text : `${nLoops}× · ${text}`;
       areaBadge!.classList.remove('hidden');
-
-      if (hasVert) {
-        const deg = controller.getSelectedCornerAngle();
-        statusEl!.textContent =
-          deg !== null
-            ? tr.statusClosedCorner(text, formatDegrees(deg))
-            : tr.statusClosed(text);
-      } else if (hasWall) {
-        statusEl!.textContent = tr.statusClosedWall(text);
-      } else {
-        const odd: string[] = [];
-        for (let i = 0; i < model.vertices.length; i++) {
-          const d = cornerAngleAt(model.vertices, i, true);
-          if (d !== null && !isCanonicalAngle(d)) odd.push(`#${i + 1} ${formatDegrees(d)}`);
-        }
-        statusEl!.textContent =
-          odd.length > 0 ? tr.statusClosedOdd(text, odd.join(', ')) : tr.statusClosed(text);
-      }
-      return;
+    } else {
+      areaBadge!.classList.add('hidden');
     }
 
-    areaBadge!.classList.add('hidden');
-    if (model.status === 'empty') {
-      statusEl!.textContent = tr.statusEmpty;
-    } else if (model.status === 'drawing') {
-      statusEl!.textContent = tr.statusDrawing;
-    } else if (hasVert) {
+    if (hasVert) {
       const deg = controller.getSelectedCornerAngle();
       statusEl!.textContent =
-        deg !== null ? tr.statusCorner(formatDegrees(deg)) : tr.statusCorner('—');
-    } else if (hasWall) {
-      statusEl!.textContent = tr.statusWallSelected;
-    } else {
-      statusEl!.textContent = tr.statusOpen(Math.max(0, model.vertices.length - 1));
+        deg !== null
+          ? tr.statusCorner(formatDegrees(deg)) +
+            (nLoops ? ` · ${formatArea(totalArea)}` : '')
+          : tr.statusCorner('—');
+      return;
     }
+    if (hasWall) {
+      statusEl!.textContent =
+        nLoops > 0
+          ? tr.statusClosedWall(formatArea(totalArea))
+          : tr.statusWallSelected;
+      return;
+    }
+    if (model.status === 'drawing') {
+      statusEl!.textContent = tr.statusDrawing;
+      return;
+    }
+    if (model.vertices.length >= 2) {
+      statusEl!.textContent = tr.statusOpen(model.vertices.length - 1);
+      return;
+    }
+    if (nLoops > 0) {
+      statusEl!.textContent = tr.statusClosed(formatArea(totalArea));
+      return;
+    }
+    statusEl!.textContent = tr.statusEmpty;
   }
 
   function layout(): void {
@@ -564,7 +585,10 @@ export function boot(root: HTMLElement): void {
     popupState = { ...popupState, mode: 'review', absorbIndex: null };
     mainActions!.classList.remove('hidden');
     relocatePanel!.classList.add('hidden');
-    refreshOddListFromVertices(controller.model.vertices);
+    const li = controller.meetfoutLoopIndex;
+    const verts =
+      li !== null ? controller.model.loops[li]?.vertices ?? [] : [];
+    refreshOddListFromVertices(verts);
     paint();
   });
   btnRelocateApply.addEventListener('click', () => {

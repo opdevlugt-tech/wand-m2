@@ -21,6 +21,7 @@ import {
   cornerAngleAt,
   listNonCanonicalCorners,
   absorbErrorAtCorner,
+  setSegmentLengthPx,
 } from '../src/geometry/math';
 import type { Point } from '../src/geometry/types';
 
@@ -130,6 +131,32 @@ describe('pointFromPolar', () => {
     const p = pointFromPolar({ x: 10, y: 10 }, 0, 5);
     expect(p.x).toBeCloseTo(15, 6);
     expect(p.y).toBeCloseTo(10, 6);
+  });
+});
+
+describe('setSegmentLengthPx', () => {
+  it('resizes wall by moving end', () => {
+    const verts = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 50 },
+    ];
+    const next = setSegmentLengthPx(verts, 0, 50, false);
+    expect(next).not.toBeNull();
+    expect(dist(next![0], next![1])).toBeCloseTo(50, 5);
+    expect(next![0]).toEqual({ x: 0, y: 0 });
+  });
+
+  it('works closed', () => {
+    const verts = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 100 },
+      { x: 0, y: 100 },
+    ];
+    const next = setSegmentLengthPx(verts, 0, 80, true);
+    expect(next).not.toBeNull();
+    expect(dist(next![0], next![1])).toBeCloseTo(80, 5);
   });
 });
 

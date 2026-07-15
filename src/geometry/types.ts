@@ -5,13 +5,34 @@ export type Segment = {
   b: Point;
 };
 
-/** Open chain or closed polygon as ordered vertices (closed: last ≈ first is NOT duplicated). */
-export type DrawingStatus = 'empty' | 'open' | 'drawing' | 'closed';
+/** Committed closed polygon (no repeated first vertex). */
+export type Loop = {
+  id: string;
+  vertices: Point[];
+};
+
+/** Active freehand chain (not yet a loop). */
+export type ActiveStatus = 'idle' | 'open' | 'drawing';
 
 export type DrawingModel = {
-  status: DrawingStatus;
-  /** Corner points. When closed, polygon is vertices[0..n-1] without repeating first. */
+  loops: Loop[];
+  status: ActiveStatus;
+  /** Active open chain corners. */
   vertices: Point[];
-  /** Live rubber-band end while pointer is down. */
   draftEnd: Point | null;
 };
+
+/** Selection of a wall or corner on a committed loop or the active chain. */
+export type Selection =
+  | { kind: 'none' }
+  | {
+      kind: 'wall';
+      /** null = active chain */
+      loopIndex: number | null;
+      wallIndex: number;
+    }
+  | {
+      kind: 'vertex';
+      loopIndex: number | null;
+      vertexIndex: number;
+    };

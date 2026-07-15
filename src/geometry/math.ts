@@ -244,6 +244,43 @@ export function formatArea(m2: number, digits = 2): string {
   return `${m2.toFixed(digits)} m²`;
 }
 
+/**
+ * Resize wall `wallIndex` to `lengthPx` by moving the end vertex along the wall direction
+ * (start vertex stays put). Works for open chain and closed polygon.
+ */
+export function setSegmentLengthPx(
+  vertices: Point[],
+  wallIndex: number,
+  lengthPx: number,
+  closed: boolean,
+): Point[] | null {
+  const n = vertices.length;
+  if (n < 2 || lengthPx < 1) return null;
+  const maxWall = closed ? n : n - 1;
+  if (wallIndex < 0 || wallIndex >= maxWall) return null;
+
+  const i = wallIndex;
+  const j = closed ? (i + 1) % n : i + 1;
+  const a = vertices[i];
+  const b = vertices[j];
+  const d = dist(a, b);
+  if (d < 1e-9) return null;
+
+  const ux = (b.x - a.x) / d;
+  const uy = (b.y - a.y) / d;
+  const newB = { x: a.x + ux * lengthPx, y: a.y + uy * lengthPx };
+  const out = vertices.map((p) => ({ ...p }));
+  out[j] = newB;
+  return out;
+}
+
+export function totalLoopsAreaM2(
+  loops: { vertices: Point[] }[],
+  pxPerMeter: number,
+): number {
+  return loops.reduce((sum, loop) => sum + polygonAreaM2(loop.vertices, pxPerMeter), 0);
+}
+
 export function formatDegrees(deg: number, digits = 1): string {
   return `${deg.toFixed(digits)}°`;
 }
@@ -531,6 +568,19 @@ function closedSelfIntersects(vertices: Point[]): boolean {
     for (let j = i + 1; j < segs.length; j++) {
       if (j === i + 1) continue;
       if (i === 0 && j === segs.length - 1) continue;
+      if (segmentsIntersect(segs[i], segs[j])) return true;
+    }
+  }
+  return false;
+}
+
+/** Public self-intersect check for open or closed polylines. */
+export function polygonSelfIntersects(vertices: Point[], closed: boolean): boolean {
+  if (closed) return closedSelfIntersects(vertices);
+  const segs = wallSegments(vertices, false);
+  for (let i = 0; i < segs.length; i++) {
+    for (let j = i + 1; j < segs.length; j++) {
+      if (j === i + 1) continue;
       if (segmentsIntersect(segs[i], segs[j])) return true;
     }
   }

@@ -23,12 +23,14 @@ export type RenderOptions = {
   pxPerMeter: number;
   hitRadius: number;
   rejectFlash: boolean;
+  /** null loopIndex = active chain */
+  selectedLoopIndex: number | null;
   selectedWallIndex: number | null;
   selectedVertexIndex: number | null;
-  /** Highlight corner from popup */
   popupCornerIndex: number | null;
-  /** Original shape while previewing meetfout-verplaatsing (dashed ghost) */
   ghostVertices?: Point[] | null;
+  /** When ghost applies to a committed loop */
+  ghostLoopIndex?: number | null;
 };
 
 const COLORS = {
@@ -87,89 +89,95 @@ export function drawScene(
 
   drawGrid(ctx, cssW, cssH, opts.pxPerMeter);
 
-  const { vertices, draftEnd, status } = model;
-  const closed = status === 'closed';
-  const wind = closed ? polygonWindingSign(vertices) : estimateOpenWinding(vertices);
+  const loops = model.loops ?? [];
+  const activeVerts = model.vertices ?? [];
+  const draftEnd = model.draftEnd;
+  const fills = [
+    'rgba(61, 214, 140, 0.16)',
+    'rgba(108, 182, 255, 0.14)',
+    'rgba(255, 209, 102, 0.12)',
+    'rgba(200, 150, 255, 0.12)',
+  ];
 
-  if (closed && vertices.length >= 3) {
-    ctx.beginPath();
-    ctx.moveTo(vertices[0].x, vertices[0].y);
-    for (let i = 1; i < vertices.length; i++) {
-      ctx.lineTo(vertices[i].x, vertices[i].y);
+  // Committed loops
+  for (let li = 0; li < loops.length; li++) {
+    let verts = loops[li].vertices;
+    if (opts.ghostLoopIndex === li && opts.ghostVertices) {
+      // preview verts drawn later; ghost of original below
     }
-    ctx.closePath();
-    ctx.fillStyle = COLORS.fill;
-    ctx.fill();
+    // If meetfout preview replaces this loop's display, app should pass modified model.loops
+    drawClosedLoop(ctx, verts, opts, li, fills[li % fills.length]);
   }
 
-  const segs = wallSegments(vertices, closed);
+  // Ghost original during relocate preview
+  if (opts.ghostVertices && opts.ghostVertices.length >= 2) {
+    const gSegs = wallSegments(opts.ghostVertices, true);
+    for (const s of gSegs) {
+      strokeSeg(ctx, s.a, s.b, 'rgba(255, 176, 32, 0.45)', 2, true);
+    }
+  }
+
+  // Active open chain
+  const windActive = estimateOpenWinding(activeVerts);
+  const segs = wallSegments(activeVerts, false);
   for (let i = 0; i < segs.length; i++) {
     const s = segs[i];
-    const selected = opts.selectedWallIndex === i;
+    const selected =
+      opts.selectedLoopIndex === null && opts.selectedWallIndex === i;
     strokeSeg(ctx, s.a, s.b, selected ? COLORS.selected : COLORS.wall, selected ? 4.5 : 3);
     drawLengthLabel(ctx, s.a, s.b, opts.pxPerMeter, false, selected);
   }
 
-  // Ghost: oorspronkelijke vorm tijdens live verplaats-preview
-  if (opts.ghostVertices && opts.ghostVertices.length >= 2) {
-    const gClosed = opts.ghostVertices.length >= 3;
-    const gSegs = wallSegments(opts.ghostVertices, gClosed);
-    for (const s of gSegs) {
-      strokeSeg(ctx, s.a, s.b, 'rgba(255, 176, 32, 0.45)', 2, true);
-    }
-    for (const p of opts.ghostVertices) {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 176, 32, 0.5)';
-      ctx.fill();
-    }
-  }
-
-  // Corner wedges — alleen binnenhoeken (binnen de lus)
-  if (vertices.length >= 3) {
-    const indices: number[] = [];
-    if (closed) {
-      for (let i = 0; i < vertices.length; i++) indices.push(i);
-    } else {
-      for (let i = 1; i < vertices.length - 1; i++) indices.push(i);
-    }
-    for (const i of indices) {
-      const ie = interiorExteriorAt(vertices, i, closed);
+  if (activeVerts.length >= 3) {
+    for (let i = 1; i < activeVerts.length - 1; i++) {
+      const ie = interiorExteriorAt(activeVerts, i, false);
       if (!ie) continue;
-      const nb = {
-        prev: vertices[closed ? (i - 1 + vertices.length) % vertices.length : i - 1],
-        corner: vertices[i],
-        next: vertices[closed ? (i + 1) % vertices.length : i + 1],
-      };
       const hi =
-        opts.selectedVertexIndex === i || opts.popupCornerIndex === i;
-      drawInteriorCorner(ctx, nb.prev, nb.corner, nb.next, wind, ie.interiorDeg, hi);
+        opts.selectedLoopIndex === null &&
+        (opts.selectedVertexIndex === i || opts.popupCornerIndex === i);
+      drawInteriorCorner(
+        ctx,
+        activeVerts[i - 1],
+        activeVerts[i],
+        activeVerts[i + 1],
+        windActive,
+        ie.interiorDeg,
+        hi,
+      );
     }
   }
 
   // draft
-  if (draftEnd && vertices.length > 0) {
-    const last = vertices[vertices.length - 1];
+  if (draftEnd && activeVerts.length > 0) {
+    const last = activeVerts[activeVerts.length - 1];
     const closing =
-      vertices.length >= 3 && nearPoint(draftEnd, vertices[0], opts.hitRadius * 1.5);
+      activeVerts.length >= 3 && nearPoint(draftEnd, activeVerts[0], opts.hitRadius * 1.5);
     const color = opts.rejectFlash ? COLORS.draftBad : closing ? COLORS.first : COLORS.draft;
     strokeSeg(ctx, last, draftEnd, color, 2, true);
     if (dist(last, draftEnd) > 4) {
       drawLengthLabel(ctx, last, draftEnd, opts.pxPerMeter, true);
     }
-    if (vertices.length >= 2 && dist(last, draftEnd) > 8) {
+    if (activeVerts.length >= 2 && dist(last, draftEnd) > 8) {
       if (closing) {
-        const prev = vertices[vertices.length - 2];
-        const ieLast = interiorExterior(prev, last, vertices[0], wind);
-        drawInteriorCorner(ctx, prev, last, vertices[0], wind, ieLast.interiorDeg, true);
-        if (vertices.length >= 2) {
-          const ieStart = interiorExterior(last, vertices[0], vertices[1], wind);
-          drawInteriorCorner(ctx, last, vertices[0], vertices[1], wind, ieStart.interiorDeg, true);
+        const prev = activeVerts[activeVerts.length - 2];
+        const ieLast = interiorExterior(prev, last, activeVerts[0], windActive);
+        drawInteriorCorner(ctx, prev, last, activeVerts[0], windActive, ieLast.interiorDeg, true);
+        if (activeVerts.length >= 2) {
+          const ieStart = interiorExterior(last, activeVerts[0], activeVerts[1], windActive);
+          drawInteriorCorner(
+            ctx,
+            last,
+            activeVerts[0],
+            activeVerts[1],
+            windActive,
+            ieStart.interiorDeg,
+            true,
+          );
         }
       } else {
-        const prev = vertices[vertices.length - 2];
-        const ie = interiorExterior(prev, last, draftEnd, wind);
-        drawInteriorCorner(ctx, prev, last, draftEnd, wind, ie.interiorDeg, true);
+        const prev = activeVerts[activeVerts.length - 2];
+        const ie = interiorExterior(prev, last, draftEnd, windActive);
+        drawInteriorCorner(ctx, prev, last, draftEnd, windActive, ie.interiorDeg, true);
         const turn = relativeTurnDeg(prev, last, draftEnd);
         const m = mid(last, draftEnd);
         drawTinyTag(ctx, m.x, m.y - 18, `Δ ${formatDegrees(turn, 0)}`);
@@ -177,27 +185,75 @@ export function drawScene(
     }
     if (closing) {
       ctx.beginPath();
-      ctx.arc(vertices[0].x, vertices[0].y, opts.hitRadius, 0, Math.PI * 2);
+      ctx.arc(activeVerts[0].x, activeVerts[0].y, opts.hitRadius, 0, Math.PI * 2);
       ctx.strokeStyle = COLORS.first;
       ctx.lineWidth = 2;
       ctx.stroke();
     }
   }
 
-  for (let i = 0; i < vertices.length; i++) {
-    const p = vertices[i];
+  for (let i = 0; i < activeVerts.length; i++) {
+    const p = activeVerts[i];
     const isFirst = i === 0;
-    const isLast = i === vertices.length - 1;
-    const isSel = opts.selectedVertexIndex === i || opts.popupCornerIndex === i;
+    const isLast = i === activeVerts.length - 1;
+    const isSel =
+      opts.selectedLoopIndex === null &&
+      (opts.selectedVertexIndex === i || opts.popupCornerIndex === i);
     const color = isSel ? COLORS.vertexSel : isFirst ? COLORS.first : COLORS.vertex;
     drawVertex(ctx, p, color, isSel ? 7 : isFirst || isLast ? 6 : 4);
   }
+}
 
-  if (closed && vertices.length >= 3) {
-    const area = polygonAreaM2(vertices, opts.pxPerMeter);
-    const c = centroid(vertices);
-    drawBadge(ctx, c.x, c.y, formatArea(area));
+function drawClosedLoop(
+  ctx: CanvasRenderingContext2D,
+  vertices: Point[],
+  opts: RenderOptions,
+  loopIndex: number,
+  fillColor: string,
+): void {
+  if (vertices.length < 3) return;
+  const wind = polygonWindingSign(vertices);
+
+  ctx.beginPath();
+  ctx.moveTo(vertices[0].x, vertices[0].y);
+  for (let i = 1; i < vertices.length; i++) {
+    ctx.lineTo(vertices[i].x, vertices[i].y);
   }
+  ctx.closePath();
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+
+  const segs = wallSegments(vertices, true);
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    const selected =
+      opts.selectedLoopIndex === loopIndex && opts.selectedWallIndex === i;
+    strokeSeg(ctx, s.a, s.b, selected ? COLORS.selected : COLORS.wall, selected ? 4.5 : 3);
+    drawLengthLabel(ctx, s.a, s.b, opts.pxPerMeter, false, selected);
+  }
+
+  for (let i = 0; i < vertices.length; i++) {
+    const ie = interiorExteriorAt(vertices, i, true);
+    if (!ie) continue;
+    const hi =
+      opts.selectedLoopIndex === loopIndex &&
+      (opts.selectedVertexIndex === i || opts.popupCornerIndex === i);
+    const prev = vertices[(i - 1 + vertices.length) % vertices.length];
+    const next = vertices[(i + 1) % vertices.length];
+    drawInteriorCorner(ctx, prev, vertices[i], next, wind, ie.interiorDeg, hi);
+  }
+
+  for (let i = 0; i < vertices.length; i++) {
+    const isSel =
+      opts.selectedLoopIndex === loopIndex &&
+      (opts.selectedVertexIndex === i || opts.popupCornerIndex === i);
+    const color = isSel ? COLORS.vertexSel : i === 0 ? COLORS.first : COLORS.vertex;
+    drawVertex(ctx, vertices[i], color, isSel ? 7 : 5);
+  }
+
+  const area = polygonAreaM2(vertices, opts.pxPerMeter);
+  const c = centroid(vertices);
+  drawBadge(ctx, c.x, c.y, formatArea(area));
 }
 
 function drawInteriorCorner(

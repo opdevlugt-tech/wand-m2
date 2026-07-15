@@ -1,4 +1,4 @@
-import type { DrawingModel, Point } from '../geometry/types';
+import type { DrawingModel, Loop, Point, Selection } from '../geometry/types';
 import {
   absorbErrorAtCorner,
   angleOf,
@@ -12,8 +12,9 @@ import {
   moveNextForCornerAngle,
   nearPoint,
   pointFromPolar,
+  polygonSelfIntersects,
   relativeTurnDeg,
-  segmentsIntersect,
+  setSegmentLengthPx,
   snapAngleRelative,
   snapCornerToCanonical,
   snapWorldAngle,
@@ -28,21 +29,30 @@ export type InteractionConfig = {
   getPxPerMeter: () => number;
   onChange: () => void;
   onReject: () => void;
-  onWallSelected?: (index: number | null, focusInput: boolean) => void;
-  onVertexSelected?: (index: number | null, focusAngle: boolean) => void;
-  /**
-   * Only after closing the loop, if one or more corners are off the 45° grid
-   * (meetfout). Not fired per wall.
-   */
+  onWallSelected?: (sel: Selection, focusInput: boolean) => void;
+  onVertexSelected?: (sel: Selection, focusAngle: boolean) => void;
   onCloseMeetfout?: (
+    loopIndex: number,
     odd: { index: number; angles: InteriorExterior }[],
   ) => void;
 };
 
+let loopSeq = 1;
+function newLoopId(): string {
+  return `L${loopSeq++}`;
+}
+
 export class DrawingController {
-  model: DrawingModel = { status: 'empty', vertices: [], draftEnd: null };
-  selectedWallIndex: number | null = null;
-  selectedVertexIndex: number | null = null;
+  model: DrawingModel = {
+    loops: [],
+    status: 'idle',
+    vertices: [],
+    draftEnd: null,
+  };
+  selection: Selection = { kind: 'none' };
+  /** Loop index for meetfout absorb ops (committed loop). */
+  meetfoutLoopIndex: number | null = null;
+
   private pointerId: number | null = null;
   private active = false;
 
@@ -67,145 +77,222 @@ export class DrawingController {
     this.canvas.removeEventListener('pointercancel', this.onUp);
   }
 
-  private isClosed(): boolean {
-    return this.model.status === 'closed';
-  }
-
-  private selectWall(index: number | null, focusInput = false): void {
-    this.selectedWallIndex = index;
-    if (index !== null) {
-      this.selectedVertexIndex = null;
-      this.cfg.onVertexSelected?.(null, false);
+  private emitSelection(focusWall = false, focusAngle = false): void {
+    if (this.selection.kind === 'wall') {
+      this.cfg.onWallSelected?.(this.selection, focusWall);
+      this.cfg.onVertexSelected?.({ kind: 'none' }, false);
+    } else if (this.selection.kind === 'vertex') {
+      this.cfg.onVertexSelected?.(this.selection, focusAngle);
+      this.cfg.onWallSelected?.({ kind: 'none' }, false);
+    } else {
+      this.cfg.onWallSelected?.({ kind: 'none' }, false);
+      this.cfg.onVertexSelected?.({ kind: 'none' }, false);
     }
-    this.cfg.onWallSelected?.(index, focusInput);
   }
 
-  private selectVertex(index: number | null, focusAngle = false): void {
-    this.selectedVertexIndex = index;
-    if (index !== null) {
-      this.selectedWallIndex = null;
-      this.cfg.onWallSelected?.(null, false);
+  private setSelection(sel: Selection, focusWall = false, focusAngle = false): void {
+    this.selection = sel;
+    this.emitSelection(focusWall, focusAngle);
+  }
+
+  /** Back-compat helpers for app.ts */
+  get selectedWallIndex(): number | null {
+    return this.selection.kind === 'wall' ? this.selection.wallIndex : null;
+  }
+  set selectedWallIndex(v: number | null) {
+    if (v === null) {
+      if (this.selection.kind === 'wall') this.selection = { kind: 'none' };
+    } else {
+      const loopIndex =
+        this.selection.kind === 'wall' || this.selection.kind === 'vertex'
+          ? this.selection.loopIndex
+          : this.model.loops.length
+            ? this.model.loops.length - 1
+            : null;
+      this.selection = { kind: 'wall', loopIndex, wallIndex: v };
     }
-    this.cfg.onVertexSelected?.(index, focusAngle);
+  }
+  get selectedVertexIndex(): number | null {
+    return this.selection.kind === 'vertex' ? this.selection.vertexIndex : null;
+  }
+  set selectedVertexIndex(v: number | null) {
+    if (v === null) {
+      if (this.selection.kind === 'vertex') this.selection = { kind: 'none' };
+    } else {
+      const loopIndex =
+        this.selection.kind === 'wall' || this.selection.kind === 'vertex'
+          ? this.selection.loopIndex
+          : this.model.loops.length
+            ? this.model.loops.length - 1
+            : null;
+      this.selection = { kind: 'vertex', loopIndex, vertexIndex: v };
+    }
   }
 
-  /** Public: focus a corner (popup “Verplaatsen”). */
   focusCorner(index: number, focusAngle = true): void {
-    this.selectVertex(index, focusAngle);
+    const loopIndex =
+      this.meetfoutLoopIndex ??
+      (this.model.loops.length ? this.model.loops.length - 1 : null);
+    this.setSelection({ kind: 'vertex', loopIndex, vertexIndex: index }, false, focusAngle);
     this.cfg.onChange();
   }
 
-  /**
-   * Put residual meetfout at absorbIndex: snap other corners to 45° grid.
-   */
+  private vertsForSelection(): { vertices: Point[]; closed: boolean } | null {
+    if (this.selection.kind === 'none') return null;
+    if (this.selection.loopIndex === null) {
+      return { vertices: this.model.vertices, closed: false };
+    }
+    const loop = this.model.loops[this.selection.loopIndex];
+    if (!loop) return null;
+    return { vertices: loop.vertices, closed: true };
+  }
+
+  private writeVerts(vertices: Point[], loopIndex: number | null): void {
+    if (loopIndex === null) {
+      this.model = { ...this.model, vertices, draftEnd: null };
+    } else {
+      const loops = this.model.loops.map((L, i) =>
+        i === loopIndex ? { ...L, vertices } : L,
+      );
+      this.model = { ...this.model, loops };
+    }
+  }
+
   absorbMeetfoutAt(absorbIndex: number): boolean {
-    if (!this.isClosed()) return false;
-    const next = absorbErrorAtCorner(this.model.vertices, absorbIndex);
-    if (polylineSelfIntersects(next, true)) {
+    const li = this.meetfoutLoopIndex;
+    if (li === null) return false;
+    const loop = this.model.loops[li];
+    if (!loop) return false;
+    const next = absorbErrorAtCorner(loop.vertices, absorbIndex);
+    if (polygonSelfIntersects(next, true)) {
       this.cfg.onReject();
       return false;
     }
-    this.model = { ...this.model, vertices: next, draftEnd: null };
-    this.selectVertex(absorbIndex, false);
+    this.writeVerts(next, li);
+    this.setSelection({ kind: 'vertex', loopIndex: li, vertexIndex: absorbIndex }, false, false);
     this.cfg.onChange();
     return true;
   }
 
   getSelectedSegment(): { a: Point; b: Point } | null {
-    if (this.selectedWallIndex === null) return null;
-    const segs = wallSegments(this.model.vertices, this.isClosed());
-    return segs[this.selectedWallIndex] ?? null;
+    if (this.selection.kind !== 'wall') return null;
+    const ctx = this.vertsForSelection();
+    if (!ctx) return null;
+    const segs = wallSegments(ctx.vertices, ctx.closed);
+    return segs[this.selection.wallIndex] ?? null;
   }
 
   getSelectedCornerAngle(): number | null {
-    if (this.selectedVertexIndex === null) return null;
-    return cornerAngleAt(this.model.vertices, this.selectedVertexIndex, this.isClosed());
+    if (this.selection.kind !== 'vertex') return null;
+    const ctx = this.vertsForSelection();
+    if (!ctx) return null;
+    return cornerAngleAt(ctx.vertices, this.selection.vertexIndex, ctx.closed);
   }
 
   getDraftTurnDeg(): number | null {
     const { vertices, draftEnd } = this.model;
     if (!draftEnd || vertices.length < 2) return null;
-    const a = vertices[vertices.length - 2];
-    const b = vertices[vertices.length - 1];
-    return relativeTurnDeg(a, b, draftEnd);
+    return relativeTurnDeg(vertices[vertices.length - 2], vertices[vertices.length - 1], draftEnd);
   }
 
   applyCornerAngle(targetDeg: number): boolean {
-    if (this.selectedVertexIndex === null) return false;
+    if (this.selection.kind !== 'vertex') return false;
+    const ctx = this.vertsForSelection();
+    if (!ctx) return false;
     const next = moveNextForCornerAngle(
-      this.model.vertices,
-      this.selectedVertexIndex,
+      ctx.vertices,
+      this.selection.vertexIndex,
       targetDeg,
-      this.isClosed(),
+      ctx.closed,
     );
     if (!next) return false;
-    if (polylineSelfIntersects(next, this.isClosed())) {
+    if (polygonSelfIntersects(next, ctx.closed)) {
       this.cfg.onReject();
       return false;
     }
-    this.model = { ...this.model, vertices: next, draftEnd: null };
+    this.writeVerts(next, this.selection.loopIndex);
     this.cfg.onChange();
-    this.cfg.onVertexSelected?.(this.selectedVertexIndex, false);
+    this.emitSelection(false, false);
     return true;
   }
 
   snapSelectedCornerCanonical(): boolean {
-    if (this.selectedVertexIndex === null) return false;
-    const next = snapCornerToCanonical(
-      this.model.vertices,
-      this.selectedVertexIndex,
-      this.isClosed(),
-    );
+    if (this.selection.kind !== 'vertex') return false;
+    const ctx = this.vertsForSelection();
+    if (!ctx) return false;
+    const next = snapCornerToCanonical(ctx.vertices, this.selection.vertexIndex, ctx.closed);
     if (!next) return false;
-    if (polylineSelfIntersects(next, this.isClosed())) {
+    if (polygonSelfIntersects(next, ctx.closed)) {
       this.cfg.onReject();
       return false;
     }
-    this.model = { ...this.model, vertices: next, draftEnd: null };
+    this.writeVerts(next, this.selection.loopIndex);
     this.cfg.onChange();
-    this.cfg.onVertexSelected?.(this.selectedVertexIndex, false);
+    this.emitSelection(false, false);
+    return true;
+  }
+
+  /**
+   * Set selected wall length in meters (geometry resize, not global scale).
+   */
+  applyWallLengthM(meters: number): boolean {
+    if (this.selection.kind !== 'wall') return false;
+    if (!(meters > 0) || !Number.isFinite(meters)) return false;
+    const ctx = this.vertsForSelection();
+    if (!ctx) return false;
+    const ppm = this.cfg.getPxPerMeter();
+    const lengthPx = meters * ppm;
+    const next = setSegmentLengthPx(ctx.vertices, this.selection.wallIndex, lengthPx, ctx.closed);
+    if (!next) return false;
+    if (polygonSelfIntersects(next, ctx.closed)) {
+      this.cfg.onReject();
+      return false;
+    }
+    this.writeVerts(next, this.selection.loopIndex);
+    this.cfg.onChange();
+    this.emitSelection(false, false);
     return true;
   }
 
   reset(): void {
-    this.model = { status: 'empty', vertices: [], draftEnd: null };
-    this.selectedWallIndex = null;
-    this.selectedVertexIndex = null;
+    this.model = { loops: [], status: 'idle', vertices: [], draftEnd: null };
+    this.selection = { kind: 'none' };
+    this.meetfoutLoopIndex = null;
     this.active = false;
     this.pointerId = null;
-    this.cfg.onWallSelected?.(null, false);
-    this.cfg.onVertexSelected?.(null, false);
+    this.emitSelection();
     this.cfg.onChange();
   }
 
   undo(): void {
-    if (this.model.status === 'closed') {
-      this.model = {
-        status: this.model.vertices.length >= 2 ? 'open' : 'empty',
-        vertices: [...this.model.vertices],
-        draftEnd: null,
-      };
-      this.selectedWallIndex = null;
-      this.selectedVertexIndex = null;
-      this.cfg.onWallSelected?.(null, false);
-      this.cfg.onVertexSelected?.(null, false);
+    if (this.model.status === 'drawing' || this.model.vertices.length > 0) {
+      const vertices = this.model.vertices.slice(0, -1);
+      if (vertices.length <= 1) {
+        this.model = { ...this.model, status: 'idle', vertices: [], draftEnd: null };
+        this.setSelection({ kind: 'none' });
+      } else {
+        this.model = {
+          ...this.model,
+          status: 'open',
+          vertices,
+          draftEnd: null,
+        };
+        this.setSelection({
+          kind: 'wall',
+          loopIndex: null,
+          wallIndex: vertices.length - 2,
+        });
+      }
       this.cfg.onChange();
       return;
     }
-    if (this.model.vertices.length === 0) return;
-    const vertices = this.model.vertices.slice(0, -1);
-    if (vertices.length <= 1) {
-      this.model = { status: 'empty', vertices: [], draftEnd: null };
-      this.selectedWallIndex = null;
-      this.selectedVertexIndex = null;
-    } else {
-      this.model = { status: 'open', vertices, draftEnd: null };
-      this.selectedWallIndex = vertices.length - 2;
-      this.selectedVertexIndex = null;
+    if (this.model.loops.length > 0) {
+      const loops = this.model.loops.slice(0, -1);
+      this.model = { ...this.model, loops };
+      this.setSelection({ kind: 'none' });
+      this.meetfoutLoopIndex = null;
+      this.cfg.onChange();
     }
-    this.cfg.onWallSelected?.(this.selectedWallIndex, false);
-    this.cfg.onVertexSelected?.(null, false);
-    this.cfg.onChange();
   }
 
   private localPoint(e: PointerEvent): Point {
@@ -213,71 +300,81 @@ export class DrawingController {
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
+  /** Hit-test committed loops then active chain. */
+  private hitTestAll(p: Point): Selection {
+    // Loops (closed)
+    for (let li = this.model.loops.length - 1; li >= 0; li--) {
+      const verts = this.model.loops[li].vertices;
+      const vHit = hitTestVertex(p, verts, this.cfg.hitRadius);
+      if (vHit !== null) {
+        return { kind: 'vertex', loopIndex: li, vertexIndex: vHit };
+      }
+      const wHit = hitTestWall(p, verts, true, this.cfg.hitRadius);
+      if (wHit !== null) {
+        return { kind: 'wall', loopIndex: li, wallIndex: wHit };
+      }
+    }
+    // Active open chain
+    if (this.model.vertices.length >= 2) {
+      const vHit = hitTestVertex(p, this.model.vertices, this.cfg.hitRadius);
+      if (vHit !== null && vHit > 0 && vHit < this.model.vertices.length - 1) {
+        return { kind: 'vertex', loopIndex: null, vertexIndex: vHit };
+      }
+      const wHit = hitTestWall(p, this.model.vertices, false, this.cfg.hitRadius);
+      if (wHit !== null) {
+        return { kind: 'wall', loopIndex: null, wallIndex: wHit };
+      }
+    }
+    return { kind: 'none' };
+  }
+
   private onDown = (e: PointerEvent): void => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
-
     const p = this.localPoint(e);
     const { vertices, status } = this.model;
 
-    if (status === 'closed') {
-      const vHit = hitTestVertex(p, vertices, this.cfg.hitRadius);
-      if (vHit !== null) {
-        this.selectVertex(vHit, true);
+    // Continue active chain from last endpoint
+    if ((status === 'open' || status === 'drawing') && vertices.length > 0) {
+      const last = vertices[vertices.length - 1];
+      if (nearPoint(p, last, this.cfg.hitRadius * 1.6)) {
+        this.model = { ...this.model, status: 'drawing', draftEnd: p };
+        this.active = true;
+        this.pointerId = e.pointerId;
+        this.canvas.setPointerCapture(e.pointerId);
         this.cfg.onChange();
         return;
       }
-      const hit = hitTestWall(p, vertices, true, this.cfg.hitRadius);
-      this.selectWall(hit, hit !== null);
+    }
+
+    // Select existing geometry
+    const hit = this.hitTestAll(p);
+    if (hit.kind !== 'none') {
+      const focusWall = hit.kind === 'wall';
+      const focusAngle = hit.kind === 'vertex';
+      this.setSelection(hit, focusWall, focusAngle);
       this.cfg.onChange();
       return;
     }
 
-    if (status === 'empty') {
+    // Start a new loop on empty space (idle or after previous loop closed)
+    if (status === 'idle' || (status === 'open' && vertices.length === 0)) {
       this.model = {
+        ...this.model,
         status: 'drawing',
         vertices: [p],
         draftEnd: p,
       };
-      this.selectWall(null, false);
-      this.selectVertex(null, false);
+      this.setSelection({ kind: 'none' });
       this.active = true;
       this.pointerId = e.pointerId;
       this.canvas.setPointerCapture(e.pointerId);
       this.cfg.onChange();
-      return;
     }
-
-    const last = vertices[vertices.length - 1];
-    if (nearPoint(p, last, this.cfg.hitRadius * 1.6)) {
-      this.model = {
-        ...this.model,
-        status: 'drawing',
-        draftEnd: p,
-      };
-      this.active = true;
-      this.pointerId = e.pointerId;
-      this.canvas.setPointerCapture(e.pointerId);
-      this.cfg.onChange();
-      return;
-    }
-
-    // Interior corners (open): angle edit
-    const vHit = hitTestVertex(p, vertices, this.cfg.hitRadius);
-    if (vHit !== null && vHit > 0 && vHit < vertices.length - 1) {
-      this.selectVertex(vHit, true);
-      this.cfg.onChange();
-      return;
-    }
-
-    const hit = hitTestWall(p, vertices, false, this.cfg.hitRadius);
-    this.selectWall(hit, hit !== null);
-    this.cfg.onChange();
   };
 
   private onMove = (e: PointerEvent): void => {
     if (!this.active || e.pointerId !== this.pointerId) return;
     if (this.model.vertices.length === 0) return;
-
     const raw = this.localPoint(e);
     const snapped = this.snapDraft(raw);
     this.model = { ...this.model, draftEnd: snapped };
@@ -301,8 +398,7 @@ export class DrawingController {
     const len = dist(last, draftEnd);
 
     if (vertices.length === 1 && len < this.cfg.minLengthPx) {
-      this.model = { status: 'empty', vertices: [], draftEnd: null };
-      this.selectWall(null, false);
+      this.model = { ...this.model, status: 'idle', vertices: [], draftEnd: null };
       this.cfg.onChange();
       return;
     }
@@ -321,23 +417,29 @@ export class DrawingController {
         this.finishCancelDraft();
         return;
       }
+      const loopVerts = [...vertices];
+      const loop: Loop = { id: newLoopId(), vertices: loopVerts };
+      const loops = [...this.model.loops, loop];
+      const loopIndex = loops.length - 1;
       this.model = {
-        status: 'closed',
-        vertices: [...vertices],
+        loops,
+        status: 'idle',
+        vertices: [],
         draftEnd: null,
       };
-      this.selectVertex(null, false);
+      this.meetfoutLoopIndex = loopIndex;
+      this.setSelection({ kind: 'wall', loopIndex, wallIndex: 0 }, true, false);
       this.cfg.onChange();
-      // Alleen popup bij afwijkende hoeken na sluiten (meetfout)
-      const oddIdx = listNonCanonicalCorners(this.model.vertices, true);
+
+      const oddIdx = listNonCanonicalCorners(loopVerts, true);
       if (oddIdx.length > 0 && this.cfg.onCloseMeetfout) {
         const odd = oddIdx
           .map((index) => {
-            const angles = interiorExteriorAt(this.model.vertices, index, true);
+            const angles = interiorExteriorAt(loopVerts, index, true);
             return angles ? { index, angles } : null;
           })
           .filter((x): x is { index: number; angles: InteriorExterior } => x !== null);
-        if (odd.length) this.cfg.onCloseMeetfout(odd);
+        if (odd.length) this.cfg.onCloseMeetfout(loopIndex, odd);
       }
       return;
     }
@@ -350,22 +452,26 @@ export class DrawingController {
 
     const nextVerts = [...vertices, draftEnd];
     this.model = {
+      ...this.model,
       status: 'open',
       vertices: nextVerts,
       draftEnd: null,
     };
-    this.selectWall(nextVerts.length - 2, true);
+    this.setSelection(
+      { kind: 'wall', loopIndex: null, wallIndex: nextVerts.length - 2 },
+      true,
+      false,
+    );
     this.cfg.onChange();
-    // Geen popup per muur — alleen bij sluiten + meetfout
   };
 
   private finishCancelDraft(): void {
     const { vertices } = this.model;
     if (vertices.length <= 1) {
-      this.model = { status: 'empty', vertices: [], draftEnd: null };
-      this.selectWall(null, false);
+      this.model = { ...this.model, status: 'idle', vertices: [], draftEnd: null };
+      this.setSelection({ kind: 'none' });
     } else {
-      this.model = { status: 'open', vertices, draftEnd: null };
+      this.model = { ...this.model, status: 'open', draftEnd: null };
     }
     this.cfg.onChange();
   }
@@ -374,7 +480,6 @@ export class DrawingController {
     const { vertices } = this.model;
     const origin = vertices[vertices.length - 1];
 
-    // Close magnet: free angle to start (niet-45°/90° sluiting door meetfout)
     if (vertices.length >= 3 && nearPoint(raw, vertices[0], this.cfg.closeRadius)) {
       return { ...vertices[0] };
     }
@@ -384,28 +489,13 @@ export class DrawingController {
 
     const desired = angleOf(origin, raw);
     let dir: number;
-
     if (vertices.length === 1) {
       dir = snapWorldAngle(desired, 45);
     } else {
       const prevA = vertices[vertices.length - 2];
       const prevB = vertices[vertices.length - 1];
-      const prevDir = angleOf(prevA, prevB);
-      dir = snapAngleRelative(prevDir, desired, 45);
+      dir = snapAngleRelative(angleOf(prevA, prevB), desired, 45);
     }
-
     return pointFromPolar(origin, dir, len);
   }
-}
-
-function polylineSelfIntersects(vertices: Point[], closed: boolean): boolean {
-  const segs = wallSegments(vertices, closed);
-  for (let i = 0; i < segs.length; i++) {
-    for (let j = i + 1; j < segs.length; j++) {
-      if (j === i + 1) continue;
-      if (closed && i === 0 && j === segs.length - 1) continue;
-      if (segmentsIntersect(segs[i], segs[j])) return true;
-    }
-  }
-  return false;
 }
