@@ -230,9 +230,13 @@ function drawPush(ctx: CanvasRenderingContext2D, s: number): void {
 }
 
 /**
- * Wandcontactdoos (Kenteq tekening): lijn + C-vorm.
- * pe/randaarde: beschermingscontacten als korte strepen op de C
- *   (NL-randaarde = zijcontacten).
+ * Wandcontactdoos (NL installatieplattegrond).
+ * Bron-vorm: elektraklus / standaard bouwtekening
+ *   zonder aarding: verticale steel + halfcirkel opening omlaag
+ *   met randaarde:  idem + horizontale balk door de top van de boog
+ *   dubbel: twee bogen onder elkaar (randaarde-balk alleen bij pe)
+ *
+ * Rotatie 0° = steel omhoog (muur/leiding van boven) — gebruiker kan Q/E draaien.
  */
 function drawSocketC(
   ctx: CanvasRenderingContext2D,
@@ -240,67 +244,58 @@ function drawSocketC(
   count: 1 | 2 | 4,
   pe: boolean,
 ): void {
-  const r = s * 0.26;
-  const gap = r * 1.05;
-  const totalW = (count - 1) * gap;
-  const c0 = -totalW / 2;
-  // toevoer vanaf links
+  const r = s * 0.32;
+  const stemH = s * 0.42;
+  // top of first arc
+  const y0 = r * 0.05;
+
+  // verticale steel (leiding van “boven”)
   ctx.beginPath();
-  ctx.moveTo(c0 - r * 1.35, 0);
-  ctx.lineTo(c0 - r * 0.55, 0);
+  ctx.moveTo(0, y0 - stemH);
+  ctx.lineTo(0, y0);
   ctx.stroke();
 
-  for (let i = 0; i < count; i++) {
-    const cx = c0 + i * gap;
-    // C opening naar rechts (Kenteq tekening)
+  if (pe) {
+    // randaarde / beschermingscontact = horizontale balk
+    const barW = r * 1.15;
     ctx.beginPath();
-    ctx.arc(cx, 0, r * 0.62, -Math.PI * 0.72, Math.PI * 0.72, false);
+    ctx.moveTo(-barW, y0);
+    ctx.lineTo(barW, y0);
     ctx.stroke();
+  }
 
-    if (pe) {
-      // Randaarde: twee zijcontacten (boven + onder in de opening van de C)
-      const ox = cx + r * 0.28;
-      const len = r * 0.42;
-      ctx.beginPath();
-      ctx.moveTo(ox, -r * 0.38);
-      ctx.lineTo(ox + len, -r * 0.38);
-      ctx.moveTo(ox, r * 0.38);
-      ctx.lineTo(ox + len, r * 0.38);
-      ctx.stroke();
-      // optioneel: korte aardstreepjes onder het symbool (beschermingsgeleider)
-      if (i === count - 1) {
-        const y = r * 0.95;
-        ctx.beginPath();
-        ctx.moveTo(cx - r * 0.35, y);
-        ctx.lineTo(cx + r * 0.55, y);
-        ctx.moveTo(cx - r * 0.2, y + r * 0.22);
-        ctx.lineTo(cx + r * 0.4, y + r * 0.22);
-        ctx.moveTo(cx - r * 0.05, y + r * 0.42);
-        ctx.lineTo(cx + r * 0.25, y + r * 0.42);
-        ctx.stroke();
-      }
-    }
+  // halfcirkels opening omlaag (zoals WCD-enkel[-randaarde].png)
+  for (let i = 0; i < count; i++) {
+    const cy = y0 + i * (r * 1.15);
+    ctx.beginPath();
+    // boog van links naar rechts, onderkant open (π .. 0, clockwise = onder)
+    ctx.arc(0, cy, r, Math.PI, 0, true);
+    ctx.stroke();
   }
 }
 
-/** Combinatie schakelaar + WCD. */
+/** Combinatie schakelaar + WCD randaarde (schakelaar boven, WCD eronder). */
 function drawCombo(ctx: CanvasRenderingContext2D, s: number): void {
-  // schakelaar links-boven
   const r = s * 0.14;
+  // schakelaar (cirkel + hendel) boven
   ctx.beginPath();
-  ctx.arc(-r * 0.8, -r * 0.6, r, 0, Math.PI * 2);
+  ctx.arc(0, -r * 2.2, r, 0, Math.PI * 2);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(-r * 0.3, -r * 0.9);
-  ctx.lineTo(r * 0.9, -r * 2.0);
+  ctx.moveTo(r * 0.4, -r * 2.5);
+  ctx.lineTo(r * 1.6, -r * 3.4);
   ctx.stroke();
-  // socket onder
+  // WCD randaarde eronder
   ctx.beginPath();
-  ctx.moveTo(-r * 1.6, r * 1.1);
-  ctx.lineTo(r * 0.2, r * 1.1);
+  ctx.moveTo(0, -r * 1.1);
+  ctx.lineTo(0, r * 0.1);
   ctx.stroke();
   ctx.beginPath();
-  ctx.arc(r * 0.7, r * 1.1, r * 0.7, -Math.PI * 0.75, Math.PI * 0.75, false);
+  ctx.moveTo(-r * 1.5, r * 0.1);
+  ctx.lineTo(r * 1.5, r * 0.1);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, r * 0.15, r * 1.35, Math.PI, 0, true);
   ctx.stroke();
 }
 
