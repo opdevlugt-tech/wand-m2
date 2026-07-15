@@ -814,7 +814,7 @@ export class DrawingController {
     this.cfg.onChange();
   };
 
-  /** Snap partition intermediate points: boundary snap or 45° from last path point. */
+  /** Snap partition draft: boundary magnet, else 0/45/90° (world or t.o.v. vorige lijn). */
   private snapPartitionDraft(raw: Point): Point {
     const li = this.model.partitionLoopIndex;
     const path = this.model.partitionPath;
@@ -832,10 +832,19 @@ export class DrawingController {
     }
 
     const last = path[path.length - 1];
-    const ang = angleOf(last, raw);
-    const snappedAng = snapWorldAngle(ang, Math.PI / 4);
-    const len = dist(last, raw);
-    return pointFromPolar(last, snappedAng, len);
+    const desired = angleOf(last, raw);
+    const len = Math.max(dist(last, raw), 1);
+
+    // Eerste segment: absoluut 0/45/90/… t.o.v. scherm-assen
+    // Volgende: relatief 0/±45/±90 t.o.v. vorige scheidingslijn (rechte / knik)
+    let dir: number;
+    if (path.length >= 2) {
+      const prev = path[path.length - 2];
+      dir = snapAngleRelative(angleOf(prev, last), desired, 45);
+    } else {
+      dir = snapWorldAngle(desired, 45);
+    }
+    return pointFromPolar(last, dir, len);
   }
 
   private moveDraggedWall(p: Point): void {

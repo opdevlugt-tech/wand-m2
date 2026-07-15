@@ -88,7 +88,7 @@ export const translations: Record<Lang, Dict> = {
     statusDoor: (w) => `Deur ${w} · sleep om te verplaatsen · typ breedte`,
     statusIdle: 'Klaar. Selecteer kamer · type · Deel… of ✂ Teken.',
     statusPartitionDraw:
-      '✂ Scheiding: 1) klik op buitenmuur · 2) optioneel hoeken (45°) · 3) andere muur. Sleep muren om te verschuiven. Esc = stop. Geen auto-deuren.',
+      '✂ Scheiding: muur → rechte/45°/90°-lijnen (snapt) · optioneel knikken · andere muur. Esc = stop. Geen auto-deuren.',
     wallM: 'Muur (m)',
     doorM: 'Deur (m)',
     addDoor: '+ Deur',
@@ -133,7 +133,7 @@ export const translations: Record<Lang, Dict> = {
     residual: 'restfout',
     hoverCorner: (n) => `Hover: live vorm met restfout bij hoek ${n}`,
     hint:
-      '✂ Scheiding = muur→hoeken→muur (45°). Deel… = ÷2/3/4. Sleep muren. +Deur handmatig. Tegel 0,3 m. Zoom: wiel/Fit.',
+      '✂ Scheiding: rechte/45°/90° (snapt). Deel… = ÷2/3/4. Sleep muren. +Deur handmatig. Tegel 0,3 m.',
   },
   en: {
     pageTitle: 'Wall-m²',
