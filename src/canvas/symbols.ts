@@ -231,12 +231,13 @@ function drawPush(ctx: CanvasRenderingContext2D, s: number): void {
 
 /**
  * Wandcontactdoos (NL installatieplattegrond).
- * Bron-vorm: elektraklus / standaard bouwtekening
- *   zonder aarding: verticale steel + halfcirkel opening omlaag
- *   met randaarde:  idem + horizontale balk door de top van de boog
- *   dubbel: twee bogen onder elkaar (randaarde-balk alleen bij pe)
+ * Bron: elektraklus WCD-enkel-randaarde.png / WCD-dubbel-randaarde.png
  *
- * Rotatie 0° = steel omhoog (muur/leiding van boven) — gebruiker kan Q/E draaien.
+ *   zonder aarding:  │ + ∩   (steel + boog opening omlaag)
+ *   met randaarde:   │ + ─ + ∩  (extra horizontale balk)
+ *   meervoudig: meerdere ∩ onder elkaar
+ *
+ * Canvas y↓: ∩ = arc van π→0 met de klok mee (door de BOVENKANT).
  */
 function drawSocketC(
   ctx: CanvasRenderingContext2D,
@@ -246,17 +247,17 @@ function drawSocketC(
 ): void {
   const r = s * 0.32;
   const stemH = s * 0.42;
-  // top of first arc
-  const y0 = r * 0.05;
+  // top of first arc (where stem meets bar/arc)
+  const y0 = 0;
 
-  // verticale steel (leiding van “boven”)
+  // verticale steel omhoog vanaf boogtop
   ctx.beginPath();
   ctx.moveTo(0, y0 - stemH);
   ctx.lineTo(0, y0);
   ctx.stroke();
 
   if (pe) {
-    // randaarde / beschermingscontact = horizontale balk
+    // randaarde = horizontale balk door top van de boog
     const barW = r * 1.15;
     ctx.beginPath();
     ctx.moveTo(-barW, y0);
@@ -264,12 +265,12 @@ function drawSocketC(
     ctx.stroke();
   }
 
-  // halfcirkels opening omlaag (zoals WCD-enkel[-randaarde].png)
+  // ∩ halfcirkels (opening naar BENEDEN) — zoals de referentie-PNG
   for (let i = 0; i < count; i++) {
-    const cy = y0 + i * (r * 1.15);
+    const cy = y0 + i * (r * 1.2);
     ctx.beginPath();
-    // boog van links naar rechts, onderkant open (π .. 0, clockwise = onder)
-    ctx.arc(0, cy, r, Math.PI, 0, true);
+    // π (links) → 0 (rechts) clockwise = door bovenkant = ∩
+    ctx.arc(0, cy, r, Math.PI, 0, false);
     ctx.stroke();
   }
 }
@@ -295,7 +296,7 @@ function drawCombo(ctx: CanvasRenderingContext2D, s: number): void {
   ctx.lineTo(r * 1.5, r * 0.1);
   ctx.stroke();
   ctx.beginPath();
-  ctx.arc(0, r * 0.15, r * 1.35, Math.PI, 0, true);
+  ctx.arc(0, r * 0.15, r * 1.35, Math.PI, 0, false);
   ctx.stroke();
 }
 
