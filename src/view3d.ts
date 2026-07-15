@@ -1,13 +1,14 @@
 /**
- * 3D walkthrough: plattegrond → wanden, free camera (ooghoogte).
- * World: meters, y-up. Plan (px) → (x,m z) met z = plan-y.
+ * 3D walkthrough: plattegrond → Three.js WebGL scene, free camera (ooghoogte).
+ * World: meters, Y-up. Plan (px) → (x, 0, z) met z = plan-y.
  */
+import * as THREE from 'three';
 import type { DrawingModel, Point } from './geometry/types';
 
 export type View3dCamera = {
   /** Camera eye in meters (absolute, plan origin) */
   eyeX: number;
-  eyeY: number; // height above floor
+  eyeY: number;
   eyeZ: number;
   /** Look yaw (rad): 0 = +Z, positive → turn right (clockwise from above) */
   yaw: number;
@@ -21,23 +22,13 @@ export type View3dOptions = {
   pxPerMeter: number;
   wallHeightM?: number;
   camera: View3dCamera;
-  /** Hide ceiling for indoor look (default true) */
-  hideCeiling?: boolean;
-  /** Wall opacity 0–1 (default 0.92) */
-  wallAlpha?: number;
 };
 
 type Vec3 = { x: number; y: number; z: number };
-type Face = {
-  pts: Vec3[];
-  fill: string;
-  stroke: string;
-  zAvg: number;
-  alpha: number;
-};
 
 const DEFAULT_H = 2.5;
 const EYE_H = 1.65;
+const WALL_THICK = 0.1;
 
 function toMeters(p: Point, ppm: number): { x: number; z: number } {
   return { x: p.x / ppm, z: p.y / ppm };
@@ -87,7 +78,6 @@ export function defaultWalkCamera(model: DrawingModel, ppm: number): View3dCamer
   if (!loops.length) {
     return { eyeX: 0, eyeY: EYE_H, eyeZ: 0, yaw: 0, pitch: 0, fovDeg: 75 };
   }
-  // first loop centroid
   const L = loops[0];
   let sx = 0;
   let sz = 0;
@@ -99,7 +89,6 @@ export function defaultWalkCamera(model: DrawingModel, ppm: number): View3dCamer
   const n = L.vertices.length;
   const cx = sx / n;
   const cz = sz / n;
-  // face along first wall direction
   const a = toMeters(L.vertices[0], ppm);
   const b = toMeters(L.vertices[1 % n], ppm);
   const yaw = Math.atan2(b.x - a.x, b.z - a.z);
@@ -119,7 +108,6 @@ export function defaultOrbitCamera(model: DrawingModel, ppm: number): View3dCame
   const b = modelBoundsM(model, ppm);
   const dist = Math.max(3, b.r * 1.8);
   const yaw = -0.6;
-  // place camera outside center
   const eyeX = c.x - Math.sin(yaw) * dist;
   const eyeZ = c.z - Math.cos(yaw) * dist;
   return {
@@ -132,70 +120,12 @@ export function defaultOrbitCamera(model: DrawingModel, ppm: number): View3dCame
   };
 }
 
-function worldToCam(p: Vec3, cam: View3dCamera): Vec3 {
-  // translate
-  let x = p.x - cam.eyeX;
-  let y = p.y - cam.eyeY;
-  let z = p.z - cam.eyeZ;
-  // rotate Y by -yaw
-  const cy = Math.cos(-cam.yaw);
-  const sy = Math.sin(-cam.yaw);
-  const x1 = x * cy + z * sy;
-  const z1 = -x * sy + z * cy;
-  // rotate X by -pitch
-  const cp = Math.cos(-cam.pitch);
-  const sp = Math.sin(-cam.pitch);
-  const y1 = y * cp - z1 * sp;
-  const z2 = y * sp + z1 * cp;
-  return { x: x1, y: y1, z: z2 };
-}
-
-function project(
-  cam: Vec3,
-  w: number,
-  h: number,
-  fovDeg: number,
-): { x: number; y: number; z: number } | null {
-  // camera looks toward +Z in cam space after our transform? 
-  // After -yaw/-pitch, forward is +Z in standard view matrix if we use z forward.
-  // Our z2: looking forward along original look dir → positive z in front.
-  if (cam.z <= 0.05) return null; // behind / too near
-  const fov = (fovDeg * Math.PI) / 180;
-  const f = 1 / Math.tan(fov / 2);
-  const aspect = w / Math.max(1, h);
-  const nx = (cam.x * f) / (aspect * cam.z);
-  const ny = (cam.y * f) / cam.z;
-  return {
-    x: w * 0.5 + nx * (h * 0.5),
-    y: h * 0.5 - ny * (h * 0.5),
-    z: cam.z,
-  };
-}
-
-function faceAvgZ(pts: Vec3[], cam: View3dCamera): number {
-  let s = 0;
-  let n = 0;
-  for (const p of pts) {
-    const c = worldToCam(p, cam);
-    if (c.z > 0.05) {
-      s += c.z;
-      n++;
-    }
-  }
-  return n ? s / n : 9999;
-}
-
-/**
- * Move camera on XZ plane relative to look direction.
- * forward/right in meters; also dy for height.
- */
 export function moveCamera(
   cam: View3dCamera,
   forward: number,
   right: number,
   up: number,
 ): View3dCamera {
-  // yaw 0 = +Z; forward along (sin yaw, cos yaw)
   const fx = Math.sin(cam.yaw);
   const fz = Math.cos(cam.yaw);
   const rx = Math.cos(cam.yaw);
@@ -213,171 +143,16 @@ export function lookCamera(cam: View3dCamera, dYaw: number, dPitch: number): Vie
   return { ...cam, yaw: cam.yaw + dYaw, pitch };
 }
 
-export function drawView3d(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  model: DrawingModel,
-  opts: View3dOptions,
-): boolean {
-  const ppm = opts.pxPerMeter > 0 ? opts.pxPerMeter : 50;
-  const wallH = opts.wallHeightM ?? DEFAULT_H;
-  const cam = opts.camera;
-  const hideCeil = opts.hideCeiling !== false;
-  const wallAlpha = opts.wallAlpha ?? 0.88;
-  const loops = model.loops.filter((L) => L.vertices.length >= 3);
-
-  // sky / floor gradient bg
-  const g = ctx.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, '#0a121c');
-  g.addColorStop(0.45, '#101820');
-  g.addColorStop(1, '#0c1014');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, w, h);
-
-  if (!loops.length) {
-    ctx.fillStyle = '#8b9bb0';
-    ctx.font = '600 14px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Teken eerst een gesloten plattegrond', w / 2, h / 2);
-    return false;
-  }
-
-  const faces: Face[] = [];
-
-  for (let li = 0; li < loops.length; li++) {
-    const L = loops[li];
-    const n = L.vertices.length;
-    const floor: Vec3[] = [];
-    for (const p of L.vertices) {
-      const m = toMeters(p, ppm);
-      floor.push({ x: m.x, y: 0, z: m.z });
-    }
-    // floor tint alternate slightly per room
-    const tint = 40 + (li % 3) * 8;
-    faces.push({
-      pts: floor,
-      fill: `rgba(${tint},${tint + 30},${tint + 15},0.92)`,
-      stroke: '#2a4a38',
-      zAvg: faceAvgZ(floor, cam),
-      alpha: 1,
-    });
-
-    if (!hideCeil) {
-      const ceil = floor.map((v) => ({ ...v, y: wallH }));
-      faces.push({
-        pts: ceil,
-        fill: 'rgba(35, 45, 60, 0.45)',
-        stroke: 'rgba(70, 90, 110, 0.35)',
-        zAvg: faceAvgZ(ceil, cam),
-        alpha: 0.45,
-      });
-    }
-
-    for (let i = 0; i < n; i++) {
-      const a = floor[i];
-      const b = floor[(i + 1) % n];
-      // door cut: simple skip middle of door walls
-      const doors = L.doors ?? [];
-      const doorOnWall = doors.filter((d) => d.wallIndex === i);
-      if (doorOnWall.length === 0) {
-        pushWall(faces, a, b, wallH, cam, wallAlpha);
-      } else {
-        // sort doors by t, cut wall into solid segments leaving gaps
-        const segs = doorCuts(a, b, doorOnWall, ppm);
-        for (const s of segs) pushWall(faces, s.a, s.b, wallH, cam, wallAlpha);
-        // door frame residual (low wall under opening? skip — open doorway)
-      }
-    }
-  }
-
-  // painter's algorithm far → near
-  faces.sort((a, b) => b.zAvg - a.zAvg);
-
-  for (const f of faces) {
-    const proj: { x: number; y: number; z: number }[] = [];
-    let any = false;
-    for (const p of f.pts) {
-      const c = worldToCam(p, cam);
-      const pr = project(c, w, h, cam.fovDeg);
-      if (pr) {
-        proj.push(pr);
-        any = true;
-      } else {
-        // clip behind: push far-off screen marker to keep shape roughly
-        proj.push({ x: w / 2, y: h / 2, z: 0.01 });
-      }
-    }
-    if (!any || proj.length < 3) continue;
-    // skip if all behind-ish
-    if (proj.every((p) => p.z < 0.08)) continue;
-
-    ctx.beginPath();
-    ctx.moveTo(proj[0].x, proj[0].y);
-    for (let i = 1; i < proj.length; i++) ctx.lineTo(proj[i].x, proj[i].y);
-    ctx.closePath();
-    ctx.fillStyle = f.fill;
-    ctx.fill();
-    ctx.strokeStyle = f.stroke;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
-
-  // crosshair
-  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-  ctx.beginPath();
-  ctx.moveTo(w / 2 - 8, h / 2);
-  ctx.lineTo(w / 2 + 8, h / 2);
-  ctx.moveTo(w / 2, h / 2 - 8);
-  ctx.lineTo(w / 2, h / 2 + 8);
-  ctx.stroke();
-
-  // HUD
-  ctx.fillStyle = '#9aabbd';
-  ctx.font = '600 11px system-ui, sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText(
-    `WASD lopen · muis kijken · Q/E omhoog/omlaag · scroll FOV · oog ${cam.eyeY.toFixed(2)} m`,
-    12,
-    h - 14,
-  );
-  ctx.fillText(
-    `pos ${cam.eyeX.toFixed(1)}, ${cam.eyeZ.toFixed(1)} m · FOV ${Math.round(cam.fovDeg)}°`,
-    12,
-    h - 30,
-  );
-
-  return true;
-}
-
-function pushWall(
-  faces: Face[],
-  a: Vec3,
-  b: Vec3,
-  wallH: number,
-  cam: View3dCamera,
-  alpha: number,
-): void {
-  const wall: Vec3[] = [
-    a,
-    b,
-    { x: b.x, y: wallH, z: b.z },
-    { x: a.x, y: wallH, z: a.z },
-  ];
-  const dx = b.x - a.x;
-  const dz = b.z - a.z;
-  const len = Math.hypot(dx, dz) || 1;
-  const shade = 0.4 + 0.4 * Math.abs(dz / len);
-  const g = Math.round(55 + shade * 100);
-  const r = Math.round(g - 10);
-  const bl = Math.round(g + 25);
-  faces.push({
-    pts: wall,
-    fill: `rgba(${r},${g},${bl},${alpha})`,
-    stroke: 'rgba(20,30,40,0.7)',
-    zAvg: faceAvgZ(wall, cam),
-    alpha,
-  });
+function applyCamera(cam: View3dCamera, threeCam: THREE.PerspectiveCamera): void {
+  threeCam.position.set(cam.eyeX, cam.eyeY, cam.eyeZ);
+  threeCam.fov = cam.fovDeg;
+  threeCam.near = 0.08;
+  threeCam.far = 200;
+  const lookX = cam.eyeX + Math.sin(cam.yaw) * Math.cos(cam.pitch);
+  const lookY = cam.eyeY + Math.sin(cam.pitch);
+  const lookZ = cam.eyeZ + Math.cos(cam.yaw) * Math.cos(cam.pitch);
+  threeCam.lookAt(lookX, lookY, lookZ);
+  threeCam.updateProjectionMatrix();
 }
 
 /** Solid wall pieces after cutting door openings (full height open). */
@@ -385,7 +160,6 @@ function doorCuts(
   a: Vec3,
   b: Vec3,
   doors: { t: number; widthM: number }[],
-  _ppm: number,
 ): { a: Vec3; b: Vec3 }[] {
   const wallLen = Math.hypot(b.x - a.x, b.z - a.z);
   if (wallLen < 1e-6) return [];
@@ -400,7 +174,6 @@ function doorCuts(
     };
   });
   gaps.sort((g, h) => g.t0 - h.t0);
-  // merge
   const merged: Gap[] = [];
   for (const g of gaps) {
     const last = merged[merged.length - 1];
@@ -420,4 +193,162 @@ function doorCuts(
   }
   if (cursor < 0.999) segs.push({ a: at(cursor), b: at(1) });
   return segs;
+}
+
+function addWallSegment(
+  group: THREE.Group,
+  a: Vec3,
+  b: Vec3,
+  wallH: number,
+  material: THREE.Material,
+): void {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const len = Math.hypot(dx, dz);
+  if (len < 0.02) return;
+  const geom = new THREE.BoxGeometry(len, wallH, WALL_THICK);
+  const mesh = new THREE.Mesh(geom, material);
+  mesh.position.set((a.x + b.x) / 2, wallH / 2, (a.z + b.z) / 2);
+  mesh.rotation.y = Math.atan2(dx, dz);
+  group.add(mesh);
+}
+
+function disposeObject(obj: THREE.Object3D): void {
+  obj.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.geometry.dispose();
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      for (const m of mats) m.dispose();
+    }
+  });
+}
+
+function buildSceneGroup(
+  model: DrawingModel,
+  ppm: number,
+  wallH: number,
+): { group: THREE.Group; hasGeometry: boolean } {
+  const group = new THREE.Group();
+  const loops = model.loops.filter((L) => L.vertices.length >= 3);
+  if (!loops.length) return { group, hasGeometry: false };
+
+  for (let li = 0; li < loops.length; li++) {
+    const L = loops[li];
+    const floorPts: Vec3[] = L.vertices.map((p) => {
+      const m = toMeters(p, ppm);
+      return { x: m.x, y: 0, z: m.z };
+    });
+
+    const shape = new THREE.Shape();
+    shape.moveTo(floorPts[0].x, floorPts[0].z);
+    for (let i = 1; i < floorPts.length; i++) shape.lineTo(floorPts[i].x, floorPts[i].z);
+    shape.closePath();
+    const floorGeom = new THREE.ShapeGeometry(shape);
+    floorGeom.rotateX(-Math.PI / 2);
+    const tint = 40 + (li % 3) * 8;
+    const floorMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(`rgb(${tint},${tint + 30},${tint + 15})`),
+      roughness: 0.92,
+      metalness: 0.02,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    });
+    const floorMesh = new THREE.Mesh(floorGeom, floorMat);
+    floorMesh.position.y = 0.002;
+    group.add(floorMesh);
+
+    const wallMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(0x4a6278),
+      roughness: 0.88,
+      metalness: 0.04,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.92,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+    });
+
+    const n = L.vertices.length;
+    for (let i = 0; i < n; i++) {
+      const a = floorPts[i];
+      const b = floorPts[(i + 1) % n];
+      const doors = (L.doors ?? []).filter((d) => d.wallIndex === i);
+      if (doors.length === 0) {
+        addWallSegment(group, a, b, wallH, wallMat);
+      } else {
+        for (const s of doorCuts(a, b, doors)) addWallSegment(group, s.a, s.b, wallH, wallMat);
+      }
+    }
+  }
+
+  return { group, hasGeometry: true };
+}
+
+/** Three.js WebGL walkthrough bound to an existing canvas element. */
+export class View3dEngine {
+  private readonly renderer: THREE.WebGLRenderer;
+  private readonly scene: THREE.Scene;
+  private readonly camera: THREE.PerspectiveCamera;
+  private building: THREE.Group | null = null;
+  private hasGeometry = false;
+
+  constructor(canvas: HTMLCanvasElement) {
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x0a121c);
+    this.scene.fog = new THREE.Fog(0x0a121c, 30, 120);
+
+    this.camera = new THREE.PerspectiveCamera(75, 1, 0.08, 200);
+
+    const ambient = new THREE.AmbientLight(0x607090, 0.55);
+    this.scene.add(ambient);
+    const sun = new THREE.DirectionalLight(0xd8e4f0, 0.85);
+    sun.position.set(6, 12, 4);
+    this.scene.add(sun);
+    const fill = new THREE.DirectionalLight(0x8090a8, 0.25);
+    fill.position.set(-4, 6, -6);
+    this.scene.add(fill);
+  }
+
+  /** Rebuild floor/wall geometry from the current model. */
+  rebuild(model: DrawingModel, opts: Pick<View3dOptions, 'pxPerMeter' | 'wallHeightM'>): boolean {
+    if (this.building) {
+      this.scene.remove(this.building);
+      disposeObject(this.building);
+      this.building = null;
+    }
+    const ppm = opts.pxPerMeter > 0 ? opts.pxPerMeter : 50;
+    const wallH = opts.wallHeightM ?? DEFAULT_H;
+    const { group, hasGeometry } = buildSceneGroup(model, ppm, wallH);
+    this.building = group;
+    this.hasGeometry = hasGeometry;
+    if (hasGeometry) this.scene.add(group);
+    return hasGeometry;
+  }
+
+  render(w: number, h: number, cam: View3dCamera): boolean {
+    const width = Math.max(1, Math.floor(w));
+    const height = Math.max(1, Math.floor(h));
+    this.renderer.setSize(width, height, false);
+    this.camera.aspect = width / height;
+    applyCamera(cam, this.camera);
+    this.renderer.render(this.scene, this.camera);
+    return this.hasGeometry;
+  }
+
+  /** Release GPU resources; call when overlay closes. */
+  dispose(): void {
+    if (this.building) {
+      this.scene.remove(this.building);
+      disposeObject(this.building);
+      this.building = null;
+    }
+    this.hasGeometry = false;
+    this.renderer.dispose();
+  }
 }

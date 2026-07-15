@@ -44,7 +44,13 @@ import {
 } from './storage/plans';
 import { bootElectraPalette } from './electra-ui';
 import { buildBom, distPointToPolyline, formatBomQty, polylineLengthM } from './install/bom';
-import { defaultWalkCamera, drawView3d, lookCamera, moveCamera, type View3dCamera } from './view3d';
+import {
+  defaultWalkCamera,
+  lookCamera,
+  moveCamera,
+  View3dEngine,
+  type View3dCamera,
+} from './view3d';
 
 const HIT = 16;
 const CLOSE = 22;
@@ -1354,30 +1360,19 @@ export function boot(root: HTMLElement): void {
 
     exportPngBtn.addEventListener('click', () => exportPng());
 
-        // —— 3D walkthrough (ooghoogte, WASD + muis) ——
+        // —— 3D walkthrough (Three.js WebGL, WASD + muis) ——
                 let v3Cam: View3dCamera = defaultWalkCamera(controller.model, getPxPerMeter());
+                let v3Engine: View3dEngine | null = null;
                 let v3Drag: { x: number; y: number } | null = null;
                 const v3Keys = new Set<string>();
                 let v3Raf = 0;
 
                 function paint3d(): void {
-                  const c = view3dCanvas!;
-                  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-                  const rect = c.getBoundingClientRect();
+                  if (!v3Engine) return;
+                  const rect = view3dCanvas!.getBoundingClientRect();
                   const w = Math.max(1, Math.floor(rect.width));
                   const h = Math.max(1, Math.floor(rect.height));
-                  c.width = Math.floor(w * dpr);
-                  c.height = Math.floor(h * dpr);
-                  const cctx = c.getContext('2d');
-                  if (!cctx) return;
-                  cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-                  drawView3d(cctx, w, h, controller.model, {
-                    pxPerMeter: getPxPerMeter(),
-                    wallHeightM: 2.5,
-                    camera: v3Cam,
-                    hideCeiling: true,
-                    wallAlpha: 0.9,
-                  });
+                  v3Engine.render(w, h, v3Cam);
                 }
 
                 function v3Tick(): void {
@@ -1405,12 +1400,18 @@ export function boot(root: HTMLElement): void {
 
                 function open3d(): void {
                   v3Cam = defaultWalkCamera(controller.model, getPxPerMeter());
+                  v3Engine?.dispose();
+                  v3Engine = new View3dEngine(view3dCanvas!);
+                  v3Engine.rebuild(controller.model, {
+                    pxPerMeter: getPxPerMeter(),
+                    wallHeightM: 2.5,
+                  });
                   view3dOverlay!.classList.remove('hidden');
                   v3Keys.clear();
+                  paint3d();
                   if (!v3Raf) v3Raf = requestAnimationFrame(v3Tick);
                   statusEl!.textContent =
-                    '3D lopen: WASD · muis kijken · Q/E omhoog/omlaag · scroll FOV · Esc';
-                  // focus canvas for keys
+                    '3D lopen: WASD · sleep om te kijken · Q/E hoogte · Shift sneller · scroll FOV · Esc';
                   view3dCanvas!.tabIndex = 0;
                   view3dCanvas!.focus();
                 }
@@ -1423,12 +1424,18 @@ export function boot(root: HTMLElement): void {
                     cancelAnimationFrame(v3Raf);
                     v3Raf = 0;
                   }
+                  v3Engine?.dispose();
+                  v3Engine = null;
                 }
 
                 view3dBtn!.addEventListener('click', () => open3d());
                 view3dClose!.addEventListener('click', () => close3d());
                 root.querySelector('#view3d-reset')?.addEventListener('click', () => {
                   v3Cam = defaultWalkCamera(controller.model, getPxPerMeter());
+                  v3Engine?.rebuild(controller.model, {
+                    pxPerMeter: getPxPerMeter(),
+                    wallHeightM: 2.5,
+                  });
                   paint3d();
                 });
                 view3dOverlay!.addEventListener('click', (e) => {
