@@ -22,6 +22,8 @@ import {
   listNonCanonicalCorners,
   absorbErrorAtCorner,
   setSegmentLengthPx,
+  doorGeometry,
+  wallPiecesWithDoors,
 } from '../src/geometry/math';
 import type { Point } from '../src/geometry/types';
 
@@ -157,6 +159,26 @@ describe('setSegmentLengthPx', () => {
     const next = setSegmentLengthPx(verts, 0, 80, true);
     expect(next).not.toBeNull();
     expect(dist(next![0], next![1])).toBeCloseTo(80, 5);
+  });
+});
+
+describe('doors', () => {
+  it('doorGeometry places opening on wall', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 100, y: 0 };
+    const g = doorGeometry(a, b, 0.5, 0.9, 50); // 0.9m * 50 = 45px wide
+    expect(g).not.toBeNull();
+    expect(dist(g!.openA, g!.openB)).toBeCloseTo(45, 4);
+    expect(g!.center.x).toBeCloseTo(50, 0);
+  });
+
+  it('wallPiecesWithDoors cuts a gap', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 100, y: 0 };
+    const pieces = wallPiecesWithDoors(a, b, [{ t: 0.5, widthM: 0.9 }], 50);
+    expect(pieces.length).toBe(2);
+    expect(pieces[0].a.x).toBeCloseTo(0, 5);
+    expect(pieces[1].b.x).toBeCloseTo(100, 5);
   });
 });
 

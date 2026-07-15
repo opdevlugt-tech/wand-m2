@@ -51,6 +51,20 @@
             />
           </label>
           <button type="button" id="snap-angle" class="btn" disabled></button>
+          <button type="button" id="add-door" class="btn" disabled></button>
+          <label class="scale door-field" id="door-field">
+            <span id="label-door"></span>
+            <input
+              id="door-width"
+              type="number"
+              min="0.3"
+              step="0.05"
+              inputmode="decimal"
+              placeholder="—"
+              disabled
+            />
+          </label>
+          <button type="button" id="remove-door" class="btn btn-danger" disabled></button>
           <label class="scale">
             <span id="label-ppm"></span>
             <input id="px-per-m" type="number" min="5" max="2000" step="1" value="50" inputmode="numeric" />

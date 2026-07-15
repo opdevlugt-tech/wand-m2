@@ -2,6 +2,7 @@ import type { DrawingModel, Point } from '../geometry/types';
 import {
   angleOf,
   dist,
+  doorGeometry,
   estimateOpenWinding,
   formatDegrees,
   formatMeters,
@@ -16,6 +17,7 @@ import {
   interiorExteriorAt,
   polygonWindingSign,
   relativeTurnDeg,
+  wallPiecesWithDoors,
   wallSegments,
 } from '../geometry/math';
 
@@ -27,9 +29,9 @@ export type RenderOptions = {
   selectedLoopIndex: number | null;
   selectedWallIndex: number | null;
   selectedVertexIndex: number | null;
+  selectedDoorId: string | null;
   popupCornerIndex: number | null;
   ghostVertices?: Point[] | null;
-  /** When ghost applies to a committed loop */
   ghostLoopIndex?: number | null;
 };
 
@@ -59,6 +61,9 @@ const COLORS = {
   angleBadFill: 'rgba(255, 77, 77, 0.22)',
   angleBadStroke: '#ff4d4d',
   popupHi: 'rgba(255, 209, 102, 0.28)',
+  door: '#6cb6ff',
+  doorSel: '#ffd166',
+  doorSwing: 'rgba(108, 182, 255, 0.35)',
 };
 
 export function resizeCanvas(
@@ -101,12 +106,9 @@ export function drawScene(
 
   // Committed loops
   for (let li = 0; li < loops.length; li++) {
-    let verts = loops[li].vertices;
-    if (opts.ghostLoopIndex === li && opts.ghostVertices) {
-      // preview verts drawn later; ghost of original below
-    }
-    // If meetfout preview replaces this loop's display, app should pass modified model.loops
-    drawClosedLoop(ctx, verts, opts, li, fills[li % fills.length]);
+    const verts = loops[li].vertices;
+    const doors = loops[li].doors ?? [];
+    drawClosedLoop(ctx, verts, opts, li, fills[li % fills.length], doors);
   }
 
   // Ghost original during relocate preview
@@ -210,6 +212,7 @@ function drawClosedLoop(
   opts: RenderOptions,
   loopIndex: number,
   fillColor: string,
+  doors: { id: string; wallIndex: number; t: number; widthM: number }[] = [],
 ): void {
   if (vertices.length < 3) return;
   const wind = polygonWindingSign(vertices);
@@ -228,8 +231,26 @@ function drawClosedLoop(
     const s = segs[i];
     const selected =
       opts.selectedLoopIndex === loopIndex && opts.selectedWallIndex === i;
-    strokeSeg(ctx, s.a, s.b, selected ? COLORS.selected : COLORS.wall, selected ? 4.5 : 3);
+    const wallDoors = doors.filter((d) => d.wallIndex === i);
+    const pieces = wallPiecesWithDoors(s.a, s.b, wallDoors, opts.pxPerMeter);
+    for (const piece of pieces) {
+      strokeSeg(
+        ctx,
+        piece.a,
+        piece.b,
+        selected ? COLORS.selected : COLORS.wall,
+        selected ? 4.5 : 3,
+      );
+    }
+    // length label on full wall (mid of original)
     drawLengthLabel(ctx, s.a, s.b, opts.pxPerMeter, false, selected);
+
+    for (const d of wallDoors) {
+      const g = doorGeometry(s.a, s.b, d.t, d.widthM, opts.pxPerMeter);
+      if (!g) continue;
+      const isSel = opts.selectedDoorId === d.id;
+      drawDoor(ctx, g, isSel, wind);
+    }
   }
 
   for (let i = 0; i < vertices.length; i++) {
@@ -254,6 +275,65 @@ function drawClosedLoop(
   const area = polygonAreaM2(vertices, opts.pxPerMeter);
   const c = centroid(vertices);
   drawBadge(ctx, c.x, c.y, formatArea(area));
+}
+
+function drawDoor(
+  ctx: CanvasRenderingContext2D,
+  g: {
+    openA: Point;
+    openB: Point;
+    center: Point;
+    dir: number;
+    halfWidthPx: number;
+  },
+  selected: boolean,
+  wind: number,
+): void {
+  const color = selected ? COLORS.doorSel : COLORS.door;
+  // jamb ticks
+  const nx = Math.cos(g.dir + Math.PI / 2);
+  const ny = Math.sin(g.dir + Math.PI / 2);
+  const jam = 6;
+  for (const p of [g.openA, g.openB]) {
+    strokeSeg(
+      ctx,
+      { x: p.x - nx * jam, y: p.y - ny * jam },
+      { x: p.x + nx * jam, y: p.y + ny * jam },
+      color,
+      selected ? 3 : 2,
+    );
+  }
+  // thin opening guide
+  strokeSeg(ctx, g.openA, g.openB, color, 1.5, true);
+
+  // swing arc (architectural) into interior side
+  const side = wind >= 0 ? 1 : -1;
+  const hinge = g.openA;
+  const r = dist(g.openA, g.openB);
+  const start = g.dir;
+  const end = g.dir + side * (Math.PI / 2);
+  ctx.beginPath();
+  ctx.arc(hinge.x, hinge.y, r, Math.min(start, end), Math.max(start, end));
+  ctx.strokeStyle = selected ? COLORS.doorSel : COLORS.doorSwing;
+  ctx.lineWidth = selected ? 2 : 1.5;
+  ctx.setLineDash([4, 3]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // leaf line closed position = along wall; open leaf at 90°
+  const leafEnd = {
+    x: hinge.x + Math.cos(end) * r,
+    y: hinge.y + Math.sin(end) * r,
+  };
+  strokeSeg(ctx, hinge, leafEnd, color, selected ? 2.5 : 1.8);
+
+  // width label near center
+  drawTinyTag(
+    ctx,
+    g.center.x,
+    g.center.y - 12,
+    selected ? 'deur ✓' : 'deur',
+  );
 }
 
 function drawInteriorCorner(

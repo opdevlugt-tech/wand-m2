@@ -150,6 +150,19 @@ body {
   box-shadow: 0 0 0 1px rgba(255, 176, 32, 0.35);
 }
 
+.door-field.active {
+  color: #6cb6ff;
+}
+
+.door-field.active input {
+  border-color: #6cb6ff;
+  box-shadow: 0 0 0 1px rgba(108, 182, 255, 0.35);
+}
+
+.door-field input {
+  width: 5rem;
+}
+
 .angle-field input {
   width: 4.5rem;
 }

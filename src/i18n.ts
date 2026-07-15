@@ -26,7 +26,11 @@ export type Dict = {
   statusClosedCorner: (area: string, deg: string) => string;
   statusClosedOdd: (area: string, odds: string) => string;
   statusMeetfoutAt: (n: number) => string;
+  statusDoor: (w: string) => string;
   wallM: string;
+  doorM: string;
+  addDoor: string;
+  removeDoor: string;
   interiorDeg: string;
   snapTitle: string;
   snapBtn: string;
@@ -62,7 +66,11 @@ export const translations: Record<Lang, Dict> = {
     statusClosedCorner: (area, deg) => `Gesloten · ${area} · binnenhoek ${deg}`,
     statusClosedOdd: (area, odds) => `Gesloten · ${area} · afwijkend: ${odds}`,
     statusMeetfoutAt: (n) => `Meetfout bij hoek ${n} · overige naar 45°/90°/135°`,
+    statusDoor: (w) => `Deur ${w} · sleep om te verplaatsen · typ breedte`,
     wallM: 'Muur (m)',
+    doorM: 'Deur (m)',
+    addDoor: '+ Deur',
+    removeDoor: 'Deur weg',
     interiorDeg: 'Binnenhoek (°)',
     snapTitle: 'Zet binnenhoek op 45° / 90° / 135° (45°-raster)',
     snapBtn: '→45/90/135',
@@ -85,7 +93,7 @@ export const translations: Record<Lang, Dict> = {
     residual: 'restfout',
     hoverCorner: (n) => `Hover: live vorm met restfout bij hoek ${n}`,
     hint:
-      'Meerdere lussen. Na sluiten: klik lijn → typ meters. Groen/rood hoeken. 45/90/135°. Talen: vlaggen.',
+      'Meerdere lussen. Muur selecteren → + Deur. Sleep deur, typ breedte. Maten per lijn. Talen: vlaggen.',
   },
   en: {
     pageTitle: 'Wall-m²',
@@ -99,7 +107,11 @@ export const translations: Record<Lang, Dict> = {
     statusClosedCorner: (area, deg) => `Closed · ${area} · interior ${deg}`,
     statusClosedOdd: (area, odds) => `Closed · ${area} · off-grid: ${odds}`,
     statusMeetfoutAt: (n) => `Error at corner ${n} · others → 45°/90°/135°`,
+    statusDoor: (w) => `Door ${w} · drag to move · type width`,
     wallM: 'Wall (m)',
+    doorM: 'Door (m)',
+    addDoor: '+ Door',
+    removeDoor: 'Remove door',
     interiorDeg: 'Interior (°)',
     snapTitle: 'Snap interior to 45° / 90° / 135°',
     snapBtn: '→45/90/135',
@@ -122,7 +134,7 @@ export const translations: Record<Lang, Dict> = {
     residual: 'residual',
     hoverCorner: (n) => `Hover: live shape with residual at corner ${n}`,
     hint:
-      'Multiple loops. After close: tap line → type meters. Green/red angles. Languages: flags.',
+      'Multiple loops. Select wall → + Door. Drag door, type width. Line lengths. Languages: flags.',
   },
   es: {
     pageTitle: 'Pared-m²',
@@ -136,7 +148,11 @@ export const translations: Record<Lang, Dict> = {
     statusClosedCorner: (area, deg) => `Cerrado · ${area} · interior ${deg}`,
     statusClosedOdd: (area, odds) => `Cerrado · ${area} · fuera de rejilla: ${odds}`,
     statusMeetfoutAt: (n) => `Error en esquina ${n} · resto → 45°/90°/135°`,
+    statusDoor: (w) => `Puerta ${w} · arrastra · escribe ancho`,
     wallM: 'Pared (m)',
+    doorM: 'Puerta (m)',
+    addDoor: '+ Puerta',
+    removeDoor: 'Quitar puerta',
     interiorDeg: 'Interior (°)',
     snapTitle: 'Ajustar interior a 45° / 90° / 135°',
     snapBtn: '→45/90/135',
@@ -173,7 +189,11 @@ export const translations: Record<Lang, Dict> = {
     statusClosedCorner: (area, deg) => `Zamknięte · ${area} · kąt ${deg}`,
     statusClosedOdd: (area, odds) => `Zamknięte · ${area} · poza siatką: ${odds}`,
     statusMeetfoutAt: (n) => `Błąd przy rogu ${n} · reszta → 45°/90°/135°`,
+    statusDoor: (w) => `Drzwi ${w} · przeciągnij · wpisz szerokość`,
     wallM: 'Ściana (m)',
+    doorM: 'Drzwi (m)',
+    addDoor: '+ Drzwi',
+    removeDoor: 'Usuń drzwi',
     interiorDeg: 'Kąt wewn. (°)',
     snapTitle: 'Ustaw kąt na 45° / 90° / 135°',
     snapBtn: '→45/90/135',
@@ -210,7 +230,11 @@ export const translations: Record<Lang, Dict> = {
     statusClosedCorner: (area, deg) => `Замкнуто · ${area} · угол ${deg}`,
     statusClosedOdd: (area, odds) => `Замкнуто · ${area} · вне сетки: ${odds}`,
     statusMeetfoutAt: (n) => `Ошибка в углу ${n} · остальные → 45°/90°/135°`,
+    statusDoor: (w) => `Дверь ${w} · перетащите · ширина`,
     wallM: 'Стена (м)',
+    doorM: 'Дверь (м)',
+    addDoor: '+ Дверь',
+    removeDoor: 'Убрать дверь',
     interiorDeg: 'Угол (°)',
     snapTitle: 'Привязать угол к 45° / 90° / 135°',
     snapBtn: '→45/90/135',

@@ -36,6 +36,11 @@ export function boot(root: HTMLElement): void {
   const angleInput = root.querySelector<HTMLInputElement>('#corner-angle');
   const angleField = root.querySelector<HTMLElement>('#angle-field');
   const snapAngleBtn = root.querySelector<HTMLButtonElement>('#snap-angle');
+  const addDoorBtn = root.querySelector<HTMLButtonElement>('#add-door');
+  const doorWidthInput = root.querySelector<HTMLInputElement>('#door-width');
+  const doorField = root.querySelector<HTMLElement>('#door-field');
+  const removeDoorBtn = root.querySelector<HTMLButtonElement>('#remove-door');
+  const labelDoor = root.querySelector<HTMLElement>('#label-door');
   const undoBtn = root.querySelector<HTMLButtonElement>('#undo');
   const resetBtn = root.querySelector<HTMLButtonElement>('#reset');
   const stage = root.querySelector<HTMLElement>('.stage');
@@ -71,6 +76,11 @@ export function boot(root: HTMLElement): void {
     !angleInput ||
     !angleField ||
     !snapAngleBtn ||
+    !addDoorBtn ||
+    !doorWidthInput ||
+    !doorField ||
+    !removeDoorBtn ||
+    !labelDoor ||
     !undoBtn ||
     !resetBtn ||
     !stage ||
@@ -111,6 +121,7 @@ export function boot(root: HTMLElement): void {
   let rejectTimer: number | null = null;
   let syncingLengthField = false;
   let syncingAngleField = false;
+  let syncingDoorField = false;
   let popupState: PopupState = null;
   let relocateBase: Point[] | null = null;
   let relocatePreview: Point[] | null = null;
@@ -127,9 +138,12 @@ export function boot(root: HTMLElement): void {
     logo!.textContent = tr.pageTitle;
     labelWall!.textContent = tr.wallM;
     labelAngle!.textContent = tr.interiorDeg;
+    labelDoor!.textContent = tr.doorM;
     labelPpm!.textContent = tr.pxPerM;
     snapAngleBtn!.textContent = tr.snapBtn;
     snapAngleBtn!.title = tr.snapTitle;
+    addDoorBtn!.textContent = tr.addDoor;
+    removeDoorBtn!.textContent = tr.removeDoor;
     undoBtn!.textContent = tr.undo;
     resetBtn!.textContent = tr.reset;
     popupDragHandle!.title = tr.dragTitle;
@@ -203,6 +217,7 @@ export function boot(root: HTMLElement): void {
       if (popupState) return;
       syncLengthFieldFromSelection();
       syncAngleFieldFromSelection();
+      syncDoorFieldFromSelection();
       if (focusInput && !wallLengthInput.disabled) {
         requestAnimationFrame(() => {
           wallLengthInput.focus();
@@ -214,10 +229,23 @@ export function boot(root: HTMLElement): void {
       if (popupState) return;
       syncLengthFieldFromSelection();
       syncAngleFieldFromSelection();
+      syncDoorFieldFromSelection();
       if (focusAngle && !angleInput.disabled) {
         requestAnimationFrame(() => {
           angleInput.focus();
           angleInput.select();
+        });
+      }
+    },
+    onDoorSelected: (_sel, focusInput) => {
+      if (popupState) return;
+      syncLengthFieldFromSelection();
+      syncAngleFieldFromSelection();
+      syncDoorFieldFromSelection();
+      if (focusInput && !doorWidthInput.disabled) {
+        requestAnimationFrame(() => {
+          doorWidthInput.focus();
+          doorWidthInput.select();
         });
       }
     },
@@ -250,9 +278,14 @@ export function boot(root: HTMLElement): void {
       hitRadius: HIT,
       rejectFlash,
       selectedLoopIndex:
-        sel.kind === 'wall' || sel.kind === 'vertex' ? sel.loopIndex : null,
+        sel.kind === 'wall' || sel.kind === 'vertex'
+          ? sel.loopIndex
+          : sel.kind === 'door'
+            ? sel.loopIndex
+            : null,
       selectedWallIndex: sel.kind === 'wall' ? sel.wallIndex : null,
       selectedVertexIndex: sel.kind === 'vertex' ? sel.vertexIndex : null,
+      selectedDoorId: sel.kind === 'door' ? sel.doorId : null,
       popupCornerIndex:
         popupState?.mode === 'relocate'
           ? popupState.absorbIndex
@@ -454,6 +487,40 @@ export function boot(root: HTMLElement): void {
     clearRelocatePreview();
     syncLengthFieldFromSelection();
     syncAngleFieldFromSelection();
+    syncDoorFieldFromSelection();
+    updateHud(controller.model);
+    paint();
+  }
+
+  function syncDoorFieldFromSelection(): void {
+    const door = controller.getSelectedDoor();
+    syncingDoorField = true;
+    const wallOnLoop =
+      controller.selection.kind === 'wall' && controller.selection.loopIndex !== null;
+    addDoorBtn!.disabled = !wallOnLoop;
+    if (!door) {
+      doorWidthInput!.value = '';
+      doorWidthInput!.disabled = true;
+      removeDoorBtn!.disabled = true;
+      doorField!.classList.remove('active');
+    } else {
+      doorWidthInput!.disabled = false;
+      removeDoorBtn!.disabled = false;
+      doorWidthInput!.value = door.widthM.toFixed(2);
+      doorField!.classList.add('active');
+    }
+    syncingDoorField = false;
+  }
+
+  function applyTypedDoorWidth(): void {
+    if (syncingDoorField) return;
+    if (controller.selection.kind !== 'door') return;
+    const meters = Number(doorWidthInput!.value.replace(',', '.'));
+    if (!controller.applyDoorWidthM(meters)) {
+      syncDoorFieldFromSelection();
+      return;
+    }
+    syncDoorFieldFromSelection();
     updateHud(controller.model);
     paint();
   }
@@ -525,6 +592,7 @@ export function boot(root: HTMLElement): void {
     const ppm = getPxPerMeter();
     const hasWall = controller.selection.kind === 'wall';
     const hasVert = controller.selection.kind === 'vertex';
+    const hasDoor = controller.selection.kind === 'door';
     const nLoops = model.loops.length;
     const totalArea = totalLoopsAreaM2(model.loops, ppm);
 
@@ -537,6 +605,13 @@ export function boot(root: HTMLElement): void {
       areaBadge!.classList.add('hidden');
     }
 
+    if (hasDoor) {
+      const d = controller.getSelectedDoor();
+      statusEl!.textContent = tr.statusDoor(
+        d ? `${d.widthM.toFixed(2)} m` : '—',
+      );
+      return;
+    }
     if (hasVert) {
       const deg = controller.getSelectedCornerAngle();
       statusEl!.textContent =
@@ -606,12 +681,14 @@ export function boot(root: HTMLElement): void {
     controller.undo();
     syncLengthFieldFromSelection();
     syncAngleFieldFromSelection();
+    syncDoorFieldFromSelection();
   });
   resetBtn.addEventListener('click', () => {
     if (popupState) dismissPopup();
     controller.reset();
     syncLengthFieldFromSelection();
     syncAngleFieldFromSelection();
+    syncDoorFieldFromSelection();
   });
   pxInput.addEventListener('change', () => {
     syncLengthFieldFromSelection();
@@ -648,6 +725,27 @@ export function boot(root: HTMLElement): void {
     paint();
   });
 
+  addDoorBtn.addEventListener('click', () => {
+    if (!controller.addDoorOnSelectedWall()) return;
+    syncDoorFieldFromSelection();
+    updateHud(controller.model);
+    paint();
+  });
+  removeDoorBtn.addEventListener('click', () => {
+    if (!controller.removeSelectedDoor()) return;
+    syncDoorFieldFromSelection();
+    updateHud(controller.model);
+    paint();
+  });
+  doorWidthInput.addEventListener('change', () => applyTypedDoorWidth());
+  doorWidthInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      applyTypedDoorWidth();
+      doorWidthInput.blur();
+    }
+  });
+
   window.addEventListener('resize', layout);
   setupPopupDrag();
   setupLangPicker();
@@ -656,4 +754,5 @@ export function boot(root: HTMLElement): void {
   updateHud(controller.model);
   syncLengthFieldFromSelection();
   syncAngleFieldFromSelection();
+  syncDoorFieldFromSelection();
 }

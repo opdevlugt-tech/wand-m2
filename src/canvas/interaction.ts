@@ -1,9 +1,11 @@
-import type { DrawingModel, Loop, Point, Selection } from '../geometry/types';
+import type { Door, DrawingModel, Loop, Point, Selection } from '../geometry/types';
 import {
   absorbErrorAtCorner,
   angleOf,
   cornerAngleAt,
   dist,
+  doorGeometry,
+  hitTestDoor,
   hitTestVertex,
   hitTestWall,
   interiorExteriorAt,
@@ -13,6 +15,7 @@ import {
   nearPoint,
   pointFromPolar,
   polygonSelfIntersects,
+  projectTOnSegment,
   relativeTurnDeg,
   setSegmentLengthPx,
   snapAngleRelative,
@@ -31,6 +34,7 @@ export type InteractionConfig = {
   onReject: () => void;
   onWallSelected?: (sel: Selection, focusInput: boolean) => void;
   onVertexSelected?: (sel: Selection, focusAngle: boolean) => void;
+  onDoorSelected?: (sel: Selection, focusInput: boolean) => void;
   onCloseMeetfout?: (
     loopIndex: number,
     odd: { index: number; angles: InteriorExterior }[],
@@ -38,9 +42,14 @@ export type InteractionConfig = {
 };
 
 let loopSeq = 1;
+let doorSeq = 1;
 function newLoopId(): string {
   return `L${loopSeq++}`;
 }
+function newDoorId(): string {
+  return `D${doorSeq++}`;
+}
+const DEFAULT_DOOR_M = 0.9;
 
 export class DrawingController {
   model: DrawingModel = {
@@ -55,6 +64,7 @@ export class DrawingController {
 
   private pointerId: number | null = null;
   private active = false;
+  private dragDoor: { loopIndex: number; doorId: string } | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -77,22 +87,34 @@ export class DrawingController {
     this.canvas.removeEventListener('pointercancel', this.onUp);
   }
 
-  private emitSelection(focusWall = false, focusAngle = false): void {
+  private emitSelection(focusWall = false, focusAngle = false, focusDoor = false): void {
     if (this.selection.kind === 'wall') {
       this.cfg.onWallSelected?.(this.selection, focusWall);
       this.cfg.onVertexSelected?.({ kind: 'none' }, false);
+      this.cfg.onDoorSelected?.({ kind: 'none' }, false);
     } else if (this.selection.kind === 'vertex') {
       this.cfg.onVertexSelected?.(this.selection, focusAngle);
       this.cfg.onWallSelected?.({ kind: 'none' }, false);
+      this.cfg.onDoorSelected?.({ kind: 'none' }, false);
+    } else if (this.selection.kind === 'door') {
+      this.cfg.onDoorSelected?.(this.selection, focusDoor);
+      this.cfg.onWallSelected?.({ kind: 'none' }, false);
+      this.cfg.onVertexSelected?.({ kind: 'none' }, false);
     } else {
       this.cfg.onWallSelected?.({ kind: 'none' }, false);
       this.cfg.onVertexSelected?.({ kind: 'none' }, false);
+      this.cfg.onDoorSelected?.({ kind: 'none' }, false);
     }
   }
 
-  private setSelection(sel: Selection, focusWall = false, focusAngle = false): void {
+  private setSelection(
+    sel: Selection,
+    focusWall = false,
+    focusAngle = false,
+    focusDoor = false,
+  ): void {
     this.selection = sel;
-    this.emitSelection(focusWall, focusAngle);
+    this.emitSelection(focusWall, focusAngle, focusDoor);
   }
 
   /** Back-compat helpers for app.ts */
@@ -138,7 +160,7 @@ export class DrawingController {
   }
 
   private vertsForSelection(): { vertices: Point[]; closed: boolean } | null {
-    if (this.selection.kind === 'none') return null;
+    if (this.selection.kind === 'none' || this.selection.kind === 'door') return null;
     if (this.selection.loopIndex === null) {
       return { vertices: this.model.vertices, closed: false };
     }
@@ -156,6 +178,20 @@ export class DrawingController {
       );
       this.model = { ...this.model, loops };
     }
+  }
+
+  private writeLoop(loopIndex: number, patch: Partial<Loop>): void {
+    const loops = this.model.loops.map((L, i) =>
+      i === loopIndex ? { ...L, ...patch } : L,
+    );
+    this.model = { ...this.model, loops };
+  }
+
+  getSelectedDoor(): Door | null {
+    if (this.selection.kind !== 'door') return null;
+    const sel = this.selection;
+    const loop = this.model.loops[sel.loopIndex];
+    return loop?.doors.find((d) => d.id === sel.doorId) ?? null;
   }
 
   absorbMeetfoutAt(absorbIndex: number): boolean {
@@ -254,12 +290,102 @@ export class DrawingController {
     return true;
   }
 
+  /**
+   * Add door on selected wall (closed loop only). Optional click point sets position.
+   */
+  addDoorOnSelectedWall(atPoint?: Point, widthM = DEFAULT_DOOR_M): boolean {
+    if (this.selection.kind !== 'wall' || this.selection.loopIndex === null) return false;
+    const li = this.selection.loopIndex;
+    const loop = this.model.loops[li];
+    if (!loop) return false;
+    const segs = wallSegments(loop.vertices, true);
+    const seg = segs[this.selection.wallIndex];
+    if (!seg) return false;
+
+    const t = atPoint ? projectTOnSegment(atPoint, seg.a, seg.b) : 0.5;
+    const ppm = this.cfg.getPxPerMeter();
+    const g = doorGeometry(seg.a, seg.b, t, widthM, ppm);
+    if (!g) {
+      this.cfg.onReject();
+      return false;
+    }
+
+    const door: Door = {
+      id: newDoorId(),
+      wallIndex: this.selection.wallIndex,
+      t,
+      widthM,
+    };
+    const doors = [...(loop.doors ?? []), door];
+    this.writeLoop(li, { doors });
+    this.setSelection({ kind: 'door', loopIndex: li, doorId: door.id }, false, false, true);
+    this.cfg.onChange();
+    return true;
+  }
+
+  applyDoorWidthM(meters: number): boolean {
+    if (this.selection.kind !== 'door') return false;
+    const sel = this.selection;
+    if (!(meters > 0.2) || !Number.isFinite(meters)) return false;
+    const li = sel.loopIndex;
+    const loop = this.model.loops[li];
+    if (!loop) return false;
+    const d = loop.doors.find((x) => x.id === sel.doorId);
+    if (!d) return false;
+    const segs = wallSegments(loop.vertices, true);
+    const seg = segs[d.wallIndex];
+    if (!seg) return false;
+    const g = doorGeometry(seg.a, seg.b, d.t, meters, this.cfg.getPxPerMeter());
+    if (!g) {
+      this.cfg.onReject();
+      return false;
+    }
+    const doors = loop.doors.map((x) =>
+      x.id === d.id ? { ...x, widthM: meters } : x,
+    );
+    this.writeLoop(li, { doors });
+    this.cfg.onChange();
+    this.emitSelection(false, false, false);
+    return true;
+  }
+
+  removeSelectedDoor(): boolean {
+    if (this.selection.kind !== 'door') return false;
+    const sel = this.selection;
+    const li = sel.loopIndex;
+    const doorId = sel.doorId;
+    const loop = this.model.loops[li];
+    if (!loop) return false;
+    this.writeLoop(li, { doors: loop.doors.filter((d) => d.id !== doorId) });
+    this.setSelection({ kind: 'none' });
+    this.cfg.onChange();
+    return true;
+  }
+
+  private moveDoorToPoint(loopIndex: number, doorId: string, p: Point): boolean {
+    const loop = this.model.loops[loopIndex];
+    if (!loop) return false;
+    const d = loop.doors.find((x) => x.id === doorId);
+    if (!d) return false;
+    const segs = wallSegments(loop.vertices, true);
+    const seg = segs[d.wallIndex];
+    if (!seg) return false;
+    const t = projectTOnSegment(p, seg.a, seg.b);
+    const g = doorGeometry(seg.a, seg.b, t, d.widthM, this.cfg.getPxPerMeter());
+    if (!g) return false;
+    this.writeLoop(loopIndex, {
+      doors: loop.doors.map((x) => (x.id === doorId ? { ...x, t } : x)),
+    });
+    return true;
+  }
+
   reset(): void {
     this.model = { loops: [], status: 'idle', vertices: [], draftEnd: null };
     this.selection = { kind: 'none' };
     this.meetfoutLoopIndex = null;
     this.active = false;
     this.pointerId = null;
+    this.dragDoor = null;
     this.emitSelection();
     this.cfg.onChange();
   }
@@ -302,19 +428,23 @@ export class DrawingController {
 
   /** Hit-test committed loops then active chain. */
   private hitTestAll(p: Point): Selection {
-    // Loops (closed)
+    const ppm = this.cfg.getPxPerMeter();
     for (let li = this.model.loops.length - 1; li >= 0; li--) {
-      const verts = this.model.loops[li].vertices;
-      const vHit = hitTestVertex(p, verts, this.cfg.hitRadius);
+      const loop = this.model.loops[li];
+      const doors = loop.doors ?? [];
+      const doorId = hitTestDoor(p, loop.vertices, doors, ppm, this.cfg.hitRadius * 1.2);
+      if (doorId) {
+        return { kind: 'door', loopIndex: li, doorId };
+      }
+      const vHit = hitTestVertex(p, loop.vertices, this.cfg.hitRadius);
       if (vHit !== null) {
         return { kind: 'vertex', loopIndex: li, vertexIndex: vHit };
       }
-      const wHit = hitTestWall(p, verts, true, this.cfg.hitRadius);
+      const wHit = hitTestWall(p, loop.vertices, true, this.cfg.hitRadius);
       if (wHit !== null) {
         return { kind: 'wall', loopIndex: li, wallIndex: wHit };
       }
     }
-    // Active open chain
     if (this.model.vertices.length >= 2) {
       const vHit = hitTestVertex(p, this.model.vertices, this.cfg.hitRadius);
       if (vHit !== null && vHit > 0 && vHit < this.model.vertices.length - 1) {
@@ -348,6 +478,15 @@ export class DrawingController {
 
     // Select existing geometry
     const hit = this.hitTestAll(p);
+    if (hit.kind === 'door') {
+      this.setSelection(hit, false, false, true);
+      this.dragDoor = { loopIndex: hit.loopIndex, doorId: hit.doorId };
+      this.active = true;
+      this.pointerId = e.pointerId;
+      this.canvas.setPointerCapture(e.pointerId);
+      this.cfg.onChange();
+      return;
+    }
     if (hit.kind !== 'none') {
       const focusWall = hit.kind === 'wall';
       const focusAngle = hit.kind === 'vertex';
@@ -374,9 +513,17 @@ export class DrawingController {
 
   private onMove = (e: PointerEvent): void => {
     if (!this.active || e.pointerId !== this.pointerId) return;
+    const p = this.localPoint(e);
+
+    if (this.dragDoor) {
+      if (this.moveDoorToPoint(this.dragDoor.loopIndex, this.dragDoor.doorId, p)) {
+        this.cfg.onChange();
+      }
+      return;
+    }
+
     if (this.model.vertices.length === 0) return;
-    const raw = this.localPoint(e);
-    const snapped = this.snapDraft(raw);
+    const snapped = this.snapDraft(p);
     this.model = { ...this.model, draftEnd: snapped };
     this.cfg.onChange();
   };
@@ -387,6 +534,12 @@ export class DrawingController {
     }
     this.active = false;
     this.pointerId = null;
+
+    if (this.dragDoor) {
+      this.dragDoor = null;
+      this.cfg.onChange();
+      return;
+    }
 
     const { vertices, draftEnd } = this.model;
     if (!draftEnd || vertices.length === 0) {
@@ -418,7 +571,7 @@ export class DrawingController {
         return;
       }
       const loopVerts = [...vertices];
-      const loop: Loop = { id: newLoopId(), vertices: loopVerts };
+      const loop: Loop = { id: newLoopId(), vertices: loopVerts, doors: [] };
       const loops = [...this.model.loops, loop];
       const loopIndex = loops.length - 1;
       this.model = {

@@ -152,6 +152,145 @@ export function distPointToSegment(p: Point, a: Point, b: Point): number {
   return dist(p, { x: a.x + t * abx, y: a.y + t * aby });
 }
 
+/** Parameter t∈[0,1] of closest point on segment a→b. */
+export function projectTOnSegment(p: Point, a: Point, b: Point): number {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const len2 = abx * abx + aby * aby;
+  if (len2 < 1e-12) return 0;
+  const t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / len2;
+  return Math.max(0, Math.min(1, t));
+}
+
+export function pointOnSegment(a: Point, b: Point, t: number): Point {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+export type DoorGeom = {
+  a: Point;
+  b: Point;
+  /** Left edge of opening (from wall start). */
+  openA: Point;
+  /** Right edge of opening. */
+  openB: Point;
+  center: Point;
+  dir: number;
+  halfWidthPx: number;
+  wallLenPx: number;
+};
+
+/**
+ * Compute door opening geometry on wall a→b.
+ * Returns null if door is wider than wall (minus margins).
+ */
+export function doorGeometry(
+  a: Point,
+  b: Point,
+  t: number,
+  widthM: number,
+  pxPerMeter: number,
+): DoorGeom | null {
+  const wallLenPx = dist(a, b);
+  if (wallLenPx < 2 || widthM <= 0 || pxPerMeter <= 0) return null;
+  const halfWidthPx = (widthM * pxPerMeter) / 2;
+  const margin = 4;
+  if (halfWidthPx * 2 + margin * 2 > wallLenPx) return null;
+
+  let tCenter = Math.max(0, Math.min(1, t));
+  const halfT = halfWidthPx / wallLenPx;
+  // Keep door fully on wall
+  tCenter = Math.max(halfT + margin / wallLenPx, Math.min(1 - halfT - margin / wallLenPx, tCenter));
+
+  const openA = pointOnSegment(a, b, tCenter - halfT);
+  const openB = pointOnSegment(a, b, tCenter + halfT);
+  const center = pointOnSegment(a, b, tCenter);
+  return {
+    a,
+    b,
+    openA,
+    openB,
+    center,
+    dir: angleOf(a, b),
+    halfWidthPx: dist(openA, openB) / 2,
+    wallLenPx,
+  };
+}
+
+/**
+ * Wall pieces left after cutting door openings (same wallIndex).
+ * Returns list of [start,end] segments to stroke.
+ */
+export function wallPiecesWithDoors(
+  a: Point,
+  b: Point,
+  doors: { t: number; widthM: number }[],
+  pxPerMeter: number,
+): Segment[] {
+  const L = dist(a, b);
+  if (L < 1e-6) return [];
+  if (!doors.length) return [{ a, b }];
+
+  type Interval = { t0: number; t1: number };
+  const cuts: Interval[] = [];
+  for (const d of doors) {
+    const g = doorGeometry(a, b, d.t, d.widthM, pxPerMeter);
+    if (!g) continue;
+    const t0 = dist(a, g.openA) / L;
+    const t1 = dist(a, g.openB) / L;
+    cuts.push({ t0: Math.min(t0, t1), t1: Math.max(t0, t1) });
+  }
+  if (!cuts.length) return [{ a, b }];
+  cuts.sort((x, y) => x.t0 - y.t0);
+
+  // Merge overlapping
+  const merged: Interval[] = [];
+  for (const c of cuts) {
+    const last = merged[merged.length - 1];
+    if (!last || c.t0 > last.t1 + 1e-6) merged.push({ ...c });
+    else last.t1 = Math.max(last.t1, c.t1);
+  }
+
+  const pieces: Segment[] = [];
+  let cursor = 0;
+  for (const m of merged) {
+    if (m.t0 - cursor > 1e-4) {
+      pieces.push({ a: pointOnSegment(a, b, cursor), b: pointOnSegment(a, b, m.t0) });
+    }
+    cursor = m.t1;
+  }
+  if (1 - cursor > 1e-4) {
+    pieces.push({ a: pointOnSegment(a, b, cursor), b: pointOnSegment(a, b, 1) });
+  }
+  return pieces;
+}
+
+export function hitTestDoor(
+  p: Point,
+  vertices: Point[],
+  doors: { id: string; wallIndex: number; t: number; widthM: number }[],
+  pxPerMeter: number,
+  maxDistPx: number,
+): string | null {
+  const segs = wallSegments(vertices, true);
+  let bestId: string | null = null;
+  let bestD = maxDistPx;
+  for (const d of doors) {
+    const seg = segs[d.wallIndex];
+    if (!seg) continue;
+    const g = doorGeometry(seg.a, seg.b, d.t, d.widthM, pxPerMeter);
+    if (!g) continue;
+    // Distance to opening segment or to center
+    const dOpen = distPointToSegment(p, g.openA, g.openB);
+    const dCenter = dist(p, g.center);
+    const dd = Math.min(dOpen, dCenter);
+    if (dd <= bestD) {
+      bestD = dd;
+      bestId = d.id;
+    }
+  }
+  return bestId;
+}
+
 /**
  * Hit-test wall index under point. Returns index into wallSegments(...), or null.
  */
