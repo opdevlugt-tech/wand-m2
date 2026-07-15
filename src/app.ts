@@ -44,7 +44,7 @@ import {
 } from './storage/plans';
 import { bootElectraPalette } from './electra-ui';
 import { buildBom, distPointToPolyline, formatBomQty, polylineLengthM } from './install/bom';
-import { defaultView3dCamera, drawView3d } from './view3d';
+import { defaultWalkCamera, drawView3d, lookCamera, moveCamera, type View3dCamera } from './view3d';
 
 const HIT = 16;
 const CLOSE = 22;
@@ -1354,92 +1354,169 @@ export function boot(root: HTMLElement): void {
 
     exportPngBtn.addEventListener('click', () => exportPng());
 
-        // —— 3D viewer (plattegrond extrusie) ——
-        let v3 = defaultView3dCamera(controller.model, getPxPerMeter());
-        let v3Drag: { x: number; y: number } | null = null;
+        // —— 3D walkthrough (ooghoogte, WASD + muis) ——
+                let v3Cam: View3dCamera = defaultWalkCamera(controller.model, getPxPerMeter());
+                let v3Drag: { x: number; y: number } | null = null;
+                const v3Keys = new Set<string>();
+                let v3Raf = 0;
 
-        function paint3d(): void {
-          const c = view3dCanvas!;
-          const dpr = Math.min(window.devicePixelRatio || 1, 2);
-          const rect = c.getBoundingClientRect();
-          const w = Math.max(1, Math.floor(rect.width));
-          const h = Math.max(1, Math.floor(rect.height));
-          c.width = Math.floor(w * dpr);
-          c.height = Math.floor(h * dpr);
-          const cctx = c.getContext('2d');
-          if (!cctx) return;
-          cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-          drawView3d(cctx, w, h, controller.model, {
-            pxPerMeter: getPxPerMeter(),
-            wallHeightM: 2.5,
-            ...v3,
-          });
-        }
+                function paint3d(): void {
+                  const c = view3dCanvas!;
+                  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                  const rect = c.getBoundingClientRect();
+                  const w = Math.max(1, Math.floor(rect.width));
+                  const h = Math.max(1, Math.floor(rect.height));
+                  c.width = Math.floor(w * dpr);
+                  c.height = Math.floor(h * dpr);
+                  const cctx = c.getContext('2d');
+                  if (!cctx) return;
+                  cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                  drawView3d(cctx, w, h, controller.model, {
+                    pxPerMeter: getPxPerMeter(),
+                    wallHeightM: 2.5,
+                    camera: v3Cam,
+                    hideCeiling: true,
+                    wallAlpha: 0.9,
+                  });
+                }
 
-        function open3d(): void {
-          v3 = defaultView3dCamera(controller.model, getPxPerMeter());
-          view3dOverlay!.classList.remove('hidden');
-          requestAnimationFrame(() => paint3d());
-          statusEl!.textContent = '3D: sleep draaien · scroll zoom · Esc sluiten';
-        }
+                function v3Tick(): void {
+                  if (view3dOverlay!.classList.contains('hidden')) {
+                    v3Raf = 0;
+                    return;
+                  }
+                  const sprint = v3Keys.has('shift') ? 2.2 : 1;
+                  const step = 0.07 * sprint;
+                  let f = 0;
+                  let r = 0;
+                  let u = 0;
+                  if (v3Keys.has('w') || v3Keys.has('arrowup')) f += step;
+                  if (v3Keys.has('s') || v3Keys.has('arrowdown')) f -= step;
+                  if (v3Keys.has('d') || v3Keys.has('arrowright')) r += step;
+                  if (v3Keys.has('a') || v3Keys.has('arrowleft')) r -= step;
+                  if (v3Keys.has('e') || v3Keys.has(' ')) u += step * 0.7;
+                  if (v3Keys.has('q') || v3Keys.has('control')) u -= step * 0.7;
+                  if (f || r || u) {
+                    v3Cam = moveCamera(v3Cam, f, r, u);
+                  }
+                  paint3d();
+                  v3Raf = requestAnimationFrame(v3Tick);
+                }
 
-        function close3d(): void {
-          view3dOverlay!.classList.add('hidden');
-          v3Drag = null;
-        }
+                function open3d(): void {
+                  v3Cam = defaultWalkCamera(controller.model, getPxPerMeter());
+                  view3dOverlay!.classList.remove('hidden');
+                  v3Keys.clear();
+                  if (!v3Raf) v3Raf = requestAnimationFrame(v3Tick);
+                  statusEl!.textContent =
+                    '3D lopen: WASD · muis kijken · Q/E omhoog/omlaag · scroll FOV · Esc';
+                  // focus canvas for keys
+                  view3dCanvas!.tabIndex = 0;
+                  view3dCanvas!.focus();
+                }
 
-        view3dBtn!.addEventListener('click', () => open3d());
-        view3dClose!.addEventListener('click', () => close3d());
-        view3dOverlay!.addEventListener('click', (e) => {
-          if (e.target === view3dOverlay) close3d();
-        });
-        window.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape' && !view3dOverlay!.classList.contains('hidden')) {
-            e.preventDefault();
-            close3d();
-          }
-        });
-        view3dCanvas!.addEventListener('pointerdown', (e) => {
-          if (e.button !== 0) return;
-          v3Drag = { x: e.clientX, y: e.clientY };
-          view3dCanvas!.setPointerCapture(e.pointerId);
-        });
-        view3dCanvas!.addEventListener('pointermove', (e) => {
-          if (!v3Drag) return;
-          const dx = e.clientX - v3Drag.x;
-          const dy = e.clientY - v3Drag.y;
-          v3Drag = { x: e.clientX, y: e.clientY };
-          v3 = {
-            ...v3,
-            yaw: v3.yaw + dx * 0.01,
-            pitch: Math.max(0.15, Math.min(1.2, v3.pitch + dy * 0.008)),
-          };
-          paint3d();
-        });
-        view3dCanvas!.addEventListener('pointerup', (e) => {
-          v3Drag = null;
-          try {
-            view3dCanvas!.releasePointerCapture(e.pointerId);
-          } catch {
-            /* ignore */
-          }
-        });
-        view3dCanvas!.addEventListener(
-          'wheel',
-          (e) => {
-            if (view3dOverlay!.classList.contains('hidden')) return;
-            e.preventDefault();
-            const f = e.deltaY > 0 ? 1.08 : 0.92;
-            v3 = { ...v3, distance: Math.max(1.5, Math.min(80, v3.distance * f)) };
-            paint3d();
-          },
-          { passive: false },
-        );
-        window.addEventListener('resize', () => {
-          if (!view3dOverlay!.classList.contains('hidden')) paint3d();
-        });
+                function close3d(): void {
+                  view3dOverlay!.classList.add('hidden');
+                  v3Drag = null;
+                  v3Keys.clear();
+                  if (v3Raf) {
+                    cancelAnimationFrame(v3Raf);
+                    v3Raf = 0;
+                  }
+                }
 
-        loadBtn.addEventListener('click', () => loadFile!.click());
+                view3dBtn!.addEventListener('click', () => open3d());
+                view3dClose!.addEventListener('click', () => close3d());
+                root.querySelector('#view3d-reset')?.addEventListener('click', () => {
+                  v3Cam = defaultWalkCamera(controller.model, getPxPerMeter());
+                  paint3d();
+                });
+                view3dOverlay!.addEventListener('click', (e) => {
+                  if (e.target === view3dOverlay) close3d();
+                });
+                window.addEventListener('keydown', (e) => {
+                  if (view3dOverlay!.classList.contains('hidden')) return;
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    close3d();
+                    return;
+                  }
+                  const k = e.key.toLowerCase();
+                  if (
+                    k === 'w' ||
+                    k === 'a' ||
+                    k === 's' ||
+                    k === 'd' ||
+                    k === 'q' ||
+                    k === 'e' ||
+                    k === ' ' ||
+                    k === 'shift' ||
+                    k === 'control' ||
+                    e.key === 'ArrowUp' ||
+                    e.key === 'ArrowDown' ||
+                    e.key === 'ArrowLeft' ||
+                    e.key === 'ArrowRight'
+                  ) {
+                    e.preventDefault();
+                    v3Keys.add(k === ' ' ? ' ' : k);
+                    if (e.key.startsWith('Arrow')) v3Keys.add(e.key.toLowerCase());
+                  }
+                });
+                window.addEventListener('keyup', (e) => {
+                  if (view3dOverlay!.classList.contains('hidden')) return;
+                  const k = e.key.toLowerCase();
+                  v3Keys.delete(k);
+                  v3Keys.delete(e.key.toLowerCase());
+                  if (e.key === ' ') v3Keys.delete(' ');
+                });
+                view3dCanvas!.addEventListener('pointerdown', (e) => {
+                  if (e.button !== 0) return;
+                  v3Drag = { x: e.clientX, y: e.clientY };
+                  view3dCanvas!.setPointerCapture(e.pointerId);
+                  view3dCanvas!.focus();
+                });
+                view3dCanvas!.addEventListener('pointermove', (e) => {
+                  if (!v3Drag) return;
+                  const dx = e.clientX - v3Drag.x;
+                  const dy = e.clientY - v3Drag.y;
+                  v3Drag = { x: e.clientX, y: e.clientY };
+                  // mouse look: yaw right, pitch invert (drag up = look up)
+                  v3Cam = lookCamera(v3Cam, dx * 0.005, -dy * 0.005);
+                  paint3d();
+                });
+                view3dCanvas!.addEventListener('pointerup', (e) => {
+                  v3Drag = null;
+                  try {
+                    view3dCanvas!.releasePointerCapture(e.pointerId);
+                  } catch {
+                    /* ignore */
+                  }
+                });
+                view3dCanvas!.addEventListener(
+                  'wheel',
+                  (e) => {
+                    if (view3dOverlay!.classList.contains('hidden')) return;
+                    e.preventDefault();
+                    // scroll = FOV (dichtbij/breed) + lichte vooruit bij ctrl
+                    if (e.ctrlKey) {
+                      const step = e.deltaY > 0 ? -0.25 : 0.25;
+                      v3Cam = moveCamera(v3Cam, step, 0, 0);
+                    } else {
+                      const d = e.deltaY > 0 ? 3 : -3;
+                      v3Cam = {
+                        ...v3Cam,
+                        fovDeg: Math.max(40, Math.min(100, v3Cam.fovDeg + d)),
+                      };
+                    }
+                    paint3d();
+                  },
+                  { passive: false },
+                );
+                window.addEventListener('resize', () => {
+                  if (!view3dOverlay!.classList.contains('hidden')) paint3d();
+                });
+
+                loadBtn.addEventListener('click', () => loadFile!.click());
     loadFile.addEventListener('change', async () => {
       const file = loadFile.files?.[0];
       loadFile.value = '';
