@@ -18,6 +18,16 @@
   </head>
   <body>
     <div id="app">
+      <nav class="app-tabs" role="tablist" aria-label="Hoofdsecties">
+        <button type="button" class="app-tab active" id="tab-draw" role="tab" aria-selected="true" data-tab="draw">
+          Plattegrond
+        </button>
+        <button type="button" class="app-tab" id="tab-install" role="tab" aria-selected="false" data-tab="install">
+          Installaties
+        </button>
+      </nav>
+
+      <div id="panel-draw" class="app-panel active">
       <header class="hud">
         <!-- Rij 1: identiteit + status + bestand -->
         <div class="hud-row hud-row-main">
@@ -28,8 +38,9 @@
           <div class="hud-file">
             <div id="lang-picker" class="lang-picker" role="group" aria-label="Language"></div>
             <button type="button" id="undo" class="btn" title="Ongedaan (Ctrl+Z)">↩</button>
-            <button type="button" id="save" class="btn btn-primary" title="Opslaan als JSON">Opslaan</button>
-            <button type="button" id="load" class="btn" title="Laden uit JSON">Laden</button>
+            <button type="button" id="save" class="btn btn-primary" title="Opslaan in bibliotheek + JSON">Opslaan</button>
+            <button type="button" id="export-png" class="btn btn-primary" title="Export PNG">PNG</button>
+            <button type="button" id="load" class="btn" title="Laden uit JSON-bestand">Laden</button>
             <input id="load-file" type="file" accept="application/json,.json" class="hidden" />
             <button type="button" id="reset" class="btn btn-danger" title="Alles wissen">Reset</button>
           </div>
@@ -211,6 +222,45 @@
         </div>
       </main>
       <p class="hint" id="footer-hint"></p>
+      </div><!-- /panel-draw -->
+
+      <div id="panel-install" class="app-panel" hidden>
+        <div class="install-layout">
+          <aside class="install-side">
+            <section class="install-block">
+              <h2 class="install-h">Opgeslagen tekeningen</h2>
+              <div class="install-plan-actions">
+                <input id="plan-name" type="text" placeholder="Naam plan…" class="install-input" />
+                <button type="button" id="plan-save-lib" class="btn btn-primary">In bibliotheek</button>
+              </div>
+              <ul id="plan-library" class="plan-library"></ul>
+              <p class="install-note">Klik een plan om te openen op Plattegrond.</p>
+            </section>
+
+            <section class="install-block">
+              <h2 class="install-h">Categorie</h2>
+              <div class="install-cats" id="install-cats" role="tablist">
+                <button type="button" class="install-cat active" data-cat="electric">Elektra</button>
+                <button type="button" class="install-cat" data-cat="water">Water</button>
+                <button type="button" class="install-cat" data-cat="drain">Afvoer</button>
+              </div>
+              <ul id="install-catalog" class="install-catalog"></ul>
+              <p class="install-note">
+                Kies een component → plaats in geselecteerde kamer (of midden van plan).
+              </p>
+            </section>
+          </aside>
+
+          <section class="install-main">
+            <h2 class="install-h">Geplaatst op dit plan</h2>
+            <p id="install-active-plan" class="install-active-plan">— geen plan —</p>
+            <ul id="install-placed" class="install-placed"></ul>
+            <p class="install-note">
+              Fase 2: categorieën stap voor stap uitwerken. Start: Elektra-catalogus + plaatsen.
+            </p>
+          </section>
+        </div>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

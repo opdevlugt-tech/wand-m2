@@ -25,6 +25,15 @@ import {
 } from './geometry/view';
 import { ROOM_CONFIG, ROOM_NAME_PRESETS_NL, getRoomType, roomDisplayName } from './config/rooms';
 import { findPartnerWall } from './geometry/math';
+import { getInstallDef, type PlacedInstall } from './config/installations';
+import {
+  AUTOSAVE_KEY,
+  createPlanDoc,
+  parsePlanPayload,
+  upsertPlan,
+  type PlanDocument,
+} from './storage/plans';
+import { bootInstallPanel } from './install-panel';
 
 const HIT = 16;
 const CLOSE = 22;
@@ -88,9 +97,14 @@ export function boot(root: HTMLElement): void {
   const zoomResetBtn = root.querySelector<HTMLButtonElement>('#zoom-reset');
   const undoBtn = root.querySelector<HTMLButtonElement>('#undo');
   const saveBtn = root.querySelector<HTMLButtonElement>('#save');
+  const exportPngBtn = root.querySelector<HTMLButtonElement>('#export-png');
   const loadBtn = root.querySelector<HTMLButtonElement>('#load');
   const loadFile = root.querySelector<HTMLInputElement>('#load-file');
   const resetBtn = root.querySelector<HTMLButtonElement>('#reset');
+  const tabDraw = root.querySelector<HTMLButtonElement>('#tab-draw');
+  const tabInstall = root.querySelector<HTMLButtonElement>('#tab-install');
+  const panelDraw = root.querySelector<HTMLElement>('#panel-draw');
+  const panelInstall = root.querySelector<HTMLElement>('#panel-install');
   const stage = root.querySelector<HTMLElement>('.stage');
   const popup = root.querySelector<HTMLElement>('#angle-popup');
   const popupLead = root.querySelector<HTMLElement>('#angle-popup-lead');
@@ -152,9 +166,14 @@ export function boot(root: HTMLElement): void {
     !zoomResetBtn ||
     !undoBtn ||
     !saveBtn ||
+    !exportPngBtn ||
     !loadBtn ||
     !loadFile ||
     !resetBtn ||
+    !tabDraw ||
+    !tabInstall ||
+    !panelDraw ||
+    !panelInstall ||
     !stage ||
     !popup ||
     !popupLead ||
@@ -310,6 +329,11 @@ export function boot(root: HTMLElement): void {
     }
   }
 
+  /** Installaties + bibliotheek-meta voor huidig plan */
+  let installations: PlacedInstall[] = [];
+  let activePlanId: string | null = null;
+  let activePlanName = '';
+
   const controller = new DrawingController(canvas, {
     hitRadius: HIT,
     closeRadius: CLOSE,
@@ -428,6 +452,15 @@ export function boot(root: HTMLElement): void {
         splitState?.mode === 'free' ? splitState.freeHover : null,
       partitionPath: controller.model.partitionPath,
       roomBadges: buildRoomBadges(model),
+      installations: installations.map((p) => {
+        const def = getInstallDef(p.defId);
+        return {
+          x: p.x,
+          y: p.y,
+          code: def?.code ?? '?',
+          color: def?.color ?? '#aaa',
+        };
+      }),
       view,
     });
   }
@@ -1098,26 +1131,27 @@ export function boot(root: HTMLElement): void {
     paint();
   });
 
-  const SAVE_KEY = 'wand-m2-autosave';
+  const SAVE_KEY = AUTOSAVE_KEY;
 
   function buildSavePayload() {
-    return {
-      v: 1,
-      savedAt: new Date().toISOString(),
-      pxPerMeter: getPxPerMeter(),
-      model: controller.model,
-    };
+    return createPlanDoc(
+      activePlanName || 'Plan',
+      controller.model,
+      getPxPerMeter(),
+      installations,
+      activePlanId ?? undefined,
+    );
   }
 
-  function applyLoadedPayload(data: {
-    pxPerMeter?: number;
-    model?: DrawingModel;
-  }): boolean {
-    if (!data?.model || !Array.isArray(data.model.loops)) return false;
-    if (typeof data.pxPerMeter === 'number' && data.pxPerMeter > 0) {
-      pxInput!.value = String(Math.round(data.pxPerMeter));
+  function applyPlanDocument(plan: PlanDocument): boolean {
+    if (!plan?.model || !Array.isArray(plan.model.loops)) return false;
+    if (typeof plan.pxPerMeter === 'number' && plan.pxPerMeter > 0) {
+      pxInput!.value = String(Math.round(plan.pxPerMeter));
     }
-    controller.loadModel(data.model);
+    controller.loadModel(plan.model);
+    installations = plan.installations ?? [];
+    activePlanId = plan.id;
+    activePlanName = plan.name;
     if (popupState) dismissPopup();
     if (splitState) closeSplitPanel();
     syncLengthFieldFromSelection();
@@ -1125,7 +1159,14 @@ export function boot(root: HTMLElement): void {
     syncDoorFieldFromSelection();
     updateHud(controller.model);
     paint();
+    root.dispatchEvent(new Event('install-refresh'));
     return true;
+  }
+
+  function applyLoadedPayload(data: unknown): boolean {
+    const plan = parsePlanPayload(data);
+    if (!plan) return false;
+    return applyPlanDocument(plan);
   }
 
   function persistLocal(): void {
@@ -1136,10 +1177,33 @@ export function boot(root: HTMLElement): void {
     }
   }
 
+  function exportPng(): void {
+    paint();
+    const src = canvas!;
+    const out = document.createElement('canvas');
+    out.width = src.width;
+    out.height = src.height;
+    const octx = out.getContext('2d');
+    if (!octx) return;
+    // solid background for export
+    octx.fillStyle = '#0f1419';
+    octx.fillRect(0, 0, out.width, out.height);
+    octx.drawImage(src, 0, 0);
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const a = document.createElement('a');
+    a.href = out.toDataURL('image/png');
+    a.download = `wand-m2-${stamp}.png`;
+    a.click();
+    statusEl!.textContent = 'PNG geëxporteerd';
+  }
+
   saveBtn.addEventListener('click', () => {
-    const payload = buildSavePayload();
+    const doc = buildSavePayload();
+    activePlanId = doc.id;
+    activePlanName = doc.name;
+    upsertPlan(doc);
     persistLocal();
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    const blob = new Blob([JSON.stringify(doc, null, 2)], {
       type: 'application/json',
     });
     const a = document.createElement('a');
@@ -1148,8 +1212,11 @@ export function boot(root: HTMLElement): void {
     a.download = `wand-m2-${stamp}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
-    statusEl!.textContent = 'Opgeslagen (bestand + browser)';
+    statusEl!.textContent = 'Opgeslagen (bibliotheek + bestand)';
+    root.dispatchEvent(new Event('install-refresh'));
   });
+
+  exportPngBtn.addEventListener('click', () => exportPng());
 
   loadBtn.addEventListener('click', () => loadFile!.click());
   loadFile.addEventListener('change', async () => {
@@ -1170,13 +1237,96 @@ export function boot(root: HTMLElement): void {
     }
   });
 
+  function switchTab(which: 'draw' | 'install'): void {
+    const draw = which === 'draw';
+    tabDraw!.classList.toggle('active', draw);
+    tabInstall!.classList.toggle('active', !draw);
+    tabDraw!.setAttribute('aria-selected', draw ? 'true' : 'false');
+    tabInstall!.setAttribute('aria-selected', draw ? 'false' : 'true');
+    panelDraw!.classList.toggle('active', draw);
+    panelInstall!.classList.toggle('active', !draw);
+    if (draw) {
+      panelDraw!.hidden = false;
+      panelInstall!.hidden = true;
+      layout();
+      paint();
+    } else {
+      panelDraw!.hidden = true;
+      panelInstall!.hidden = false;
+      root.dispatchEvent(new Event('install-refresh'));
+    }
+  }
+  tabDraw.addEventListener('click', () => switchTab('draw'));
+  tabInstall.addEventListener('click', () => switchTab('install'));
+
+  bootInstallPanel(root, {
+    getModel: () => controller.model,
+    getPxPerMeter,
+    getInstallations: () => installations,
+    setInstallations: (items) => {
+      installations = items;
+    },
+    openPlan: (plan) => {
+      applyPlanDocument(plan);
+      switchTab('draw');
+      statusEl!.textContent = `Plan geopend: ${plan.name}`;
+    },
+    getActivePlanMeta: () => ({ id: activePlanId, name: activePlanName }),
+    setActivePlanMeta: (id, name) => {
+      activePlanId = id;
+      activePlanName = name;
+    },
+    getSelectedLoopCentroid: () => {
+      const li = controller.selectedLoopIndex();
+      if (li === null) return null;
+      const L = controller.model.loops[li];
+      if (!L?.vertices.length) return null;
+      let x = 0;
+      let y = 0;
+      for (const p of L.vertices) {
+        x += p.x;
+        y += p.y;
+      }
+      return {
+        x: x / L.vertices.length,
+        y: y / L.vertices.length,
+        loopId: L.id,
+      };
+    },
+    getPlanCentroid: () => {
+      const pts: { x: number; y: number }[] = [];
+      for (const L of controller.model.loops) {
+        for (const p of L.vertices) pts.push(p);
+      }
+      for (const p of controller.model.vertices) pts.push(p);
+      if (!pts.length) return { x: 200, y: 200 };
+      let x = 0;
+      let y = 0;
+      for (const p of pts) {
+        x += p.x;
+        y += p.y;
+      }
+      return { x: x / pts.length, y: y / pts.length };
+    },
+    onChange: () => {
+      paint();
+      persistLocal();
+    },
+  });
+
   resetBtn.addEventListener('click', () => {
     if (popupState) dismissPopup();
     if (splitState) closeSplitPanel();
     controller.reset();
+    installations = [];
+    activePlanId = null;
+    activePlanName = '';
     syncLengthFieldFromSelection();
     syncAngleFieldFromSelection();
     syncDoorFieldFromSelection();
+    updateHud(controller.model);
+    paint();
+    root.dispatchEvent(new Event('install-refresh'));
   });
   pxInput.addEventListener('change', () => {
     syncLengthFieldFromSelection();

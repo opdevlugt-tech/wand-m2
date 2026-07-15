@@ -39,24 +39,20 @@ Footer-hint volgt dezelfde flow.
 
 ---
 
-## Fase 2 — frisse start (voorstel)
+## Fase 2 — in gang
 
-**Doel:** collega-proof + “klaar om te delen”.
+### Klaar in deze ronde
+- **PNG-export** (knop PNG)
+- **Tab Installaties**: bibliotheek opgeslagen tekeningen + componenten
+- Catalogus **3 categorieën**: Elektra · Water · Afvoer (plaatsen in kamer-midden)
+- Symbolen op plattegrond
 
-### P0
-1. **PNG-export** van de tekening (één knop)  
-2. **Demo laden** (voorbeeld appartement) voor onboarding  
-3. Dogfood-lijst: 5 pijnpunten na 15 min echte plan-tekening  
+### Volgende (per categorie uitwerken)
+1. **Elektra** — slepen/plaatsen op klik, wall-snap, aantallen
+2. **Water** — leiding-logica / koppeling aan ruimtes
+3. **Afvoer** — valhoogte / putten
 
-### P1
-4. Scheiding-sleep edge cases alleen als ze in dogfood terugkomen  
-5. HUD mobile: tools scrollbaar / collapse op smal scherm  
-6. Print-vriendelijke lichte theme (optioneel)
-
-### Definitie “fase 2 klaar”
-- Collega tekent 3 kamers + deuren zonder uitleg > 2 min  
-- Kan plan als PNG sturen  
-- Geen showstopper-bugs op de happy path  
+Zie ook eerdere P0: demo-plan, dogfood.
 
 ---
 

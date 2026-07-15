@@ -47,6 +47,13 @@ export type RenderOptions = {
     ok: boolean;
     warn: string | null;
   }[];
+  /** Geplaatste installatie-symbolen */
+  installations?: {
+    x: number;
+    y: number;
+    code: string;
+    color: string;
+  }[];
 };
 
 /** Screen-constant line width under zoom */
@@ -287,6 +294,13 @@ export function drawScene(
       cx /= L.vertices.length;
       cy /= L.vertices.length;
       drawRoomAreaBadge(ctx, cx, cy, b.label, b.areaText, b.ok, b.warn);
+    }
+  }
+
+  // Installatie-componenten
+  if (opts.installations?.length) {
+    for (const inst of opts.installations) {
+      drawInstallSymbol(ctx, inst.x, inst.y, inst.code, inst.color);
     }
   }
 
@@ -589,6 +603,28 @@ function drawRoomAreaBadge(
     ctx.fillStyle = '#ffb020';
     ctx.fillText(warn, x, yy);
   }
+}
+
+function drawInstallSymbol(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  code: string,
+  color: string,
+): void {
+  const r = lw(9);
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(15,20,25,0.9)';
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw(1.5);
+  ctx.stroke();
+  ctx.font = `700 ${lw(7)}px system-ui, sans-serif`;
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(code, x, y);
 }
 
 function drawGridWorld(
