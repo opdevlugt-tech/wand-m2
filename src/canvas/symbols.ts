@@ -1,10 +1,12 @@
 /**
- * Elektrotechnische symbolen — kolom "Tekening" (installatieplattegrond).
- * Bron: Kenteq / Techniekstad preview
- * https://leermiddelenshop.kenteq.nl/Previews/8882292149368.pdf
+ * Elektrotechnische symbolen — installatieplattegrond.
  *
- * Dunne lijnen, geen achtergrond-rondje, lijnbreedte zoom-stabiel (schermpixels).
+ * - WCD randaarde: NL-vorm (elektraklus referenties)
+ * - Schakelaar / lamp / CU e.a.: vector uit FIA CAD DWG (First In Architecture)
+ *   geëxtraheerd via LibreDWG dwg2dxf + clustering
  */
+import { drawFiaSymbol } from './cad-paths';
+
 export type ElectraSymbolId =
   | 'switch-1p' // éénpolige schakelaar
   | 'switch-2p' // tweepolige schakelaar
@@ -28,6 +30,18 @@ export type ElectraSymbolId =
   | 'cable-empty' // loze leiding
   | 'cable-wired' // bedrade leiding
   | 'cable-earth'; // leiding met aarding
+
+/** Map naar FIA CAD-paden waar beschikbaar. */
+const FIA_MAP: Partial<Record<ElectraSymbolId, string>> = {
+  'switch-1p': 'switch_1g',
+  'switch-2p': 'switch_2g',
+  'switch-wissel': 'switch_2way',
+  pushbutton: 'push',
+  light: 'light_pendant',
+  'light-tl': 'light_tl',
+  meterkast: 'cu',
+  // NL WCD blijft handgetekend (randaarde) — FIA is UK switched socket
+};
 
 export function drawElectraSymbol(
   ctx: CanvasRenderingContext2D,
@@ -53,77 +67,60 @@ export function drawElectraSymbol(
   ctx.strokeStyle = selected ? '#ffd166' : '#e8eef7';
   ctx.fillStyle = selected ? '#ffd166' : '#e8eef7';
   ctx.font = `600 ${fontW}px system-ui, sans-serif`;
-  // geen rondje/achtergrond
 
-  switch (id) {
-    case 'switch-1p':
-      drawSwitchLever(ctx, s, 1);
-      break;
-    case 'switch-2p':
-      drawSwitchLever(ctx, s, 2);
-      break;
-    case 'switch-wissel':
-      drawSwitchWissel(ctx, s);
-      break;
-    case 'switch-kruis':
-      drawSwitchKruis(ctx, s);
-      break;
-    case 'switch-serie':
-      drawSwitchSerie(ctx, s);
-      break;
-    case 'dimmer':
-      drawDimmer(ctx, s);
-      break;
-    case 'pushbutton':
-      drawPush(ctx, s);
-      break;
-    case 'socket':
-      drawSocketC(ctx, s, 1, false);
-      break;
-    case 'socket-pe':
-      drawSocketC(ctx, s, 1, true);
-      break;
-    case 'socket-double':
-      drawSocketC(ctx, s, 2, true); // dubbel standaard met randaarde
-      break;
-    case 'socket-quad':
-      drawSocketC(ctx, s, 4, true);
-      break;
-    case 'combo-sw-socket':
-      drawCombo(ctx, s);
-      break;
-    case 'light':
-      drawLightX(ctx, s, false);
-      break;
-    case 'light-signal':
-      drawLightX(ctx, s, true);
-      break;
-    case 'light-tl':
-      drawTl(ctx, s);
-      break;
-    case 'meterkast':
-      drawMeterkast(ctx, s, fontW);
-      break;
-    case 'junction':
-      drawJunction(ctx, s);
-      break;
-    case 'centraal':
-      drawCentraal(ctx, s, false);
-      break;
-    case 'centraal-light':
-      drawCentraal(ctx, s, true);
-      break;
-    case 'cable-empty':
-      drawCable(ctx, s, 'empty');
-      break;
-    case 'cable-wired':
-      drawCable(ctx, s, 'wired');
-      break;
-    case 'cable-earth':
-      drawCable(ctx, s, 'earth');
-      break;
-    default:
-      drawSocketC(ctx, s, 1, true);
+  const fia = FIA_MAP[id];
+  if (fia) {
+    drawFiaSymbol(ctx, fia, s * 0.95);
+  } else {
+    switch (id) {
+      case 'switch-kruis':
+        drawSwitchKruis(ctx, s);
+        break;
+      case 'switch-serie':
+        drawSwitchSerie(ctx, s);
+        break;
+      case 'dimmer':
+        drawDimmer(ctx, s);
+        break;
+      case 'socket':
+        drawSocketC(ctx, s, 1, false);
+        break;
+      case 'socket-pe':
+        drawSocketC(ctx, s, 1, true);
+        break;
+      case 'socket-double':
+        drawSocketC(ctx, s, 2, true);
+        break;
+      case 'socket-quad':
+        drawSocketC(ctx, s, 4, true);
+        break;
+      case 'combo-sw-socket':
+        drawCombo(ctx, s);
+        break;
+      case 'light-signal':
+        drawLightX(ctx, s, true);
+        break;
+      case 'junction':
+        drawJunction(ctx, s);
+        break;
+      case 'centraal':
+        drawCentraal(ctx, s, false);
+        break;
+      case 'centraal-light':
+        drawCentraal(ctx, s, true);
+        break;
+      case 'cable-empty':
+        drawCable(ctx, s, 'empty');
+        break;
+      case 'cable-wired':
+        drawCable(ctx, s, 'wired');
+        break;
+      case 'cable-earth':
+        drawCable(ctx, s, 'earth');
+        break;
+      default:
+        drawSocketC(ctx, s, 1, true);
+    }
   }
 
   if (selected) {
@@ -150,47 +147,6 @@ export function drawElectraSymbol(
   ctx.restore();
 }
 
-/** Kenteq: cirkel + schuine hendel; poles = streepjes op hendel. */
-function drawSwitchLever(ctx: CanvasRenderingContext2D, s: number, poles: 1 | 2): void {
-  const r = s * 0.18;
-  ctx.beginPath();
-  ctx.arc(0, r * 0.35, r, 0, Math.PI * 2);
-  ctx.stroke();
-  // hendel omhoog-rechts
-  ctx.beginPath();
-  ctx.moveTo(r * 0.55, r * 0.05);
-  ctx.lineTo(r * 1.9, -r * 1.55);
-  ctx.stroke();
-  if (poles === 2) {
-    // dubbele schuine streep op hendel
-    for (const t of [0.45, 0.62]) {
-      const x = r * 0.55 + t * (r * 1.35);
-      const y = r * 0.05 + t * (-r * 1.6);
-      ctx.beginPath();
-      ctx.moveTo(x - r * 0.25, y - r * 0.12);
-      ctx.lineTo(x + r * 0.12, y + r * 0.28);
-      ctx.stroke();
-    }
-  }
-}
-
-/** Wissel: cirkel + hendel met haak onderaan. */
-function drawSwitchWissel(ctx: CanvasRenderingContext2D, s: number): void {
-  const r = s * 0.18;
-  ctx.beginPath();
-  ctx.arc(0, 0, r, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(-r * 0.9, r * 0.7);
-  ctx.lineTo(r * 1.5, -r * 1.4);
-  ctx.stroke();
-  // haak
-  ctx.beginPath();
-  ctx.moveTo(-r * 0.9, r * 0.7);
-  ctx.lineTo(-r * 1.35, r * 1.15);
-  ctx.stroke();
-}
-
 /** Kruis: X met open einden (kruisschakelaar tekening). */
 function drawSwitchKruis(ctx: CanvasRenderingContext2D, s: number): void {
   const a = s * 0.32;
@@ -200,7 +156,6 @@ function drawSwitchKruis(ctx: CanvasRenderingContext2D, s: number): void {
   ctx.moveTo(a, -a);
   ctx.lineTo(-a, a);
   ctx.stroke();
-  // kleine open ringen op de 4 einden
   for (const [x, y] of [
     [-a, -a],
     [a, a],
@@ -226,26 +181,21 @@ function drawSwitchSerie(ctx: CanvasRenderingContext2D, s: number): void {
   ctx.stroke();
 }
 
-/** Dimmer: schakelaar + pijlpunt op hendel. */
+/** Dimmer: schakelaar-achtig + pijlpunt. */
 function drawDimmer(ctx: CanvasRenderingContext2D, s: number): void {
-  drawSwitchLever(ctx, s, 1);
   const r = s * 0.18;
+  ctx.beginPath();
+  ctx.arc(0, r * 0.35, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(r * 0.55, r * 0.05);
+  ctx.lineTo(r * 1.9, -r * 1.55);
+  ctx.stroke();
   ctx.beginPath();
   ctx.moveTo(r * 1.55, -r * 1.2);
   ctx.lineTo(r * 2.05, -r * 1.75);
   ctx.lineTo(r * 1.45, -r * 1.65);
   ctx.closePath();
-  ctx.stroke();
-}
-
-/** Drukknop: dubbele concentrische cirkel. */
-function drawPush(ctx: CanvasRenderingContext2D, s: number): void {
-  const r = s * 0.28;
-  ctx.beginPath();
-  ctx.arc(0, 0, r, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(0, 0, r * 0.48, 0, Math.PI * 2);
   ctx.stroke();
 }
 
@@ -338,36 +288,6 @@ function drawLightX(ctx: CanvasRenderingContext2D, s: number, signal: boolean): 
   ctx.moveTo(a * 0.75, -a * 0.55);
   ctx.lineTo(-a * 0.05, a * 0.55);
   ctx.stroke();
-}
-
-/** TL: langwerpige buis met eindkappen. */
-function drawTl(ctx: CanvasRenderingContext2D, s: number): void {
-  const w = s * 0.7;
-  const h = s * 0.2;
-  ctx.strokeRect(-w / 2, -h / 2, w, h);
-  ctx.beginPath();
-  ctx.moveTo(-w / 2 - s * 0.1, 0);
-  ctx.lineTo(-w / 2, 0);
-  ctx.moveTo(w / 2, 0);
-  ctx.lineTo(w / 2 + s * 0.1, 0);
-  ctx.stroke();
-}
-
-/** Meterkast op plattegrond: rechthoek "mk". */
-function drawMeterkast(ctx: CanvasRenderingContext2D, s: number, fontW: number): void {
-  const w = s * 0.7;
-  const h = s * 0.45;
-  ctx.strokeRect(-w / 2, -h / 2, w, h);
-  // driehoekje onder (opening/deur hint)
-  ctx.beginPath();
-  ctx.moveTo(-w * 0.15, h / 2);
-  ctx.lineTo(0, h / 2 + s * 0.15);
-  ctx.lineTo(w * 0.15, h / 2);
-  ctx.stroke();
-  ctx.font = `700 ${fontW}px system-ui, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('mk', 0, 0);
 }
 
 /** Lasdoos: open cirkel. */
