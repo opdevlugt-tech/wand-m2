@@ -1308,3 +1308,101 @@ export function evaluateRoom(
     missingDoor: requireDoor && doorCount < minDoors,
   };
 }
+
+const EDGE_MATCH_EPS = 6;
+
+/** True if segment ab matches cd (same endpoints, either order). */
+export function edgesMatch(
+  a: Point,
+  b: Point,
+  c: Point,
+  d: Point,
+  eps = EDGE_MATCH_EPS,
+): boolean {
+  return (
+    (dist(a, c) < eps && dist(b, d) < eps) ||
+    (dist(a, d) < eps && dist(b, c) < eps)
+  );
+}
+
+export type SharedWallRef = {
+  loopIndex: number;
+  wallIndex: number;
+  partnerLoopIndex: number;
+  partnerWallIndex: number;
+};
+
+/** Find the partner shared wall for a given loop wall, if any (internal partition). */
+export function findPartnerWall(
+  loops: { vertices: Point[] }[],
+  loopIndex: number,
+  wallIndex: number,
+): SharedWallRef | null {
+  const L = loops[loopIndex];
+  if (!L || L.vertices.length < 2) return null;
+  const segs = wallSegments(L.vertices, true);
+  const s = segs[wallIndex];
+  if (!s) return null;
+  for (let j = 0; j < loops.length; j++) {
+    if (j === loopIndex) continue;
+    const segsB = wallSegments(loops[j].vertices, true);
+    for (let w = 0; w < segsB.length; w++) {
+      if (edgesMatch(s.a, s.b, segsB[w].a, segsB[w].b)) {
+        return {
+          loopIndex,
+          wallIndex,
+          partnerLoopIndex: j,
+          partnerWallIndex: w,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Translate a wall (and its shared partner) by delta. Both endpoints move.
+ * Rejects if resulting polygons self-intersect or area collapses.
+ */
+export function translateWallBy(
+  vertices: Point[],
+  wallIndex: number,
+  dx: number,
+  dy: number,
+): Point[] | null {
+  const n = vertices.length;
+  if (n < 3 || wallIndex < 0 || wallIndex >= n) return null;
+  const next = vertices.map((p) => ({ ...p }));
+  const i0 = wallIndex;
+  const i1 = (wallIndex + 1) % n;
+  next[i0] = { x: next[i0].x + dx, y: next[i0].y + dy };
+  next[i1] = { x: next[i1].x + dx, y: next[i1].y + dy };
+  if (polygonSelfIntersects(next, true)) return null;
+  // tiny area guard (px²)
+  let area = 0;
+  for (let i = 0; i < n; i++) {
+    const a = next[i];
+    const b = next[(i + 1) % n];
+    area += a.x * b.y - b.x * a.y;
+  }
+  if (Math.abs(area) < 200) return null;
+  return next;
+}
+
+/** Unit normal of wall (left of a→b). */
+export function wallNormal(a: Point, b: Point): Point {
+  const L = dist(a, b) || 1;
+  return { x: -(b.y - a.y) / L, y: (b.x - a.x) / L };
+}
+
+/** Project vector onto wall normal; return displacement. */
+export function projectOntoNormal(
+  dx: number,
+  dy: number,
+  a: Point,
+  b: Point,
+): { dx: number; dy: number } {
+  const n = wallNormal(a, b);
+  const s = dx * n.x + dy * n.y;
+  return { dx: n.x * s, dy: n.y * s };
+}

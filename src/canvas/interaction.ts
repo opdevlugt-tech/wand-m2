@@ -33,6 +33,10 @@ import {
   splitPolygonByPartition,
   wallSegments,
   wouldIntersect,
+  findPartnerWall,
+  translateWallBy,
+  projectOntoNormal,
+  type SharedWallRef,
 } from '../geometry/math';
 import { ROOM_CONFIG } from '../config/rooms';
 
@@ -80,6 +84,12 @@ export class DrawingController {
   private pointerId: number | null = null;
   private active = false;
   private dragDoor: { loopIndex: number; doorId: string } | null = null;
+  private dragWall: {
+    loopIndex: number;
+    wallIndex: number;
+    partner: SharedWallRef | null;
+    last: Point;
+  } | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -601,6 +611,7 @@ export class DrawingController {
     this.active = false;
     this.pointerId = null;
     this.dragDoor = null;
+    this.dragWall = null;
     this.emitSelection();
     this.cfg.onChange();
   }
@@ -734,34 +745,52 @@ export class DrawingController {
       hit.kind === 'wall' &&
       hit.loopIndex === this.selection.loopIndex
     ) {
-      const sel = this.selection;
-      const loop = this.model.loops[sel.loopIndex];
-      const door = loop?.doors.find((d) => d.id === sel.doorId);
-      if (door && door.wallIndex === hit.wallIndex) {
-        this.dragDoor = { loopIndex: sel.loopIndex, doorId: sel.doorId };
-        this.moveDoorToPoint(sel.loopIndex, sel.doorId, p);
+      const d = this.getSelectedDoor();
+      if (d && d.wallIndex === hit.wallIndex) {
+        this.dragDoor = {
+          loopIndex: this.selection.loopIndex,
+          doorId: this.selection.doorId,
+        };
         this.active = true;
         this.pointerId = e.pointerId;
         this.canvas.setPointerCapture(e.pointerId);
-        this.cfg.onChange();
         return;
       }
     }
 
-    if (hit.kind !== 'none') {
-      const focusWall = hit.kind === 'wall';
-      const focusAngle = hit.kind === 'vertex';
-      this.setSelection(hit, focusWall, focusAngle);
+    if (hit.kind === 'wall' && hit.loopIndex !== null) {
+      this.setSelection(hit, true, false);
+      this.dragWall = {
+        loopIndex: hit.loopIndex,
+        wallIndex: hit.wallIndex,
+        partner: findPartnerWall(this.model.loops, hit.loopIndex, hit.wallIndex),
+        last: p,
+      };
+      this.active = true;
+      this.pointerId = e.pointerId;
+      this.canvas.setPointerCapture(e.pointerId);
       this.cfg.onChange();
       return;
     }
 
-    // Start a new loop on empty space (idle or after previous loop closed)
+    if (hit.kind === 'wall') {
+      this.setSelection(hit, true, false);
+      this.cfg.onChange();
+      return;
+    }
+
+    if (hit.kind === 'vertex') {
+      this.setSelection(hit, false, true);
+      this.cfg.onChange();
+      return;
+    }
+
+    // Empty click: start new chain if idle
     if (status === 'idle' || (status === 'open' && vertices.length === 0)) {
       this.model = {
         ...this.model,
         status: 'drawing',
-        vertices: [p],
+        vertices: [{ ...p }],
         draftEnd: p,
       };
       this.setSelection({ kind: 'none' });
@@ -773,7 +802,6 @@ export class DrawingController {
   };
 
   private onMove = (e: PointerEvent): void => {
-    if (!this.active || e.pointerId !== this.pointerId) return;
     const p = this.localPoint(e);
 
     if (this.dragDoor) {
@@ -783,24 +811,88 @@ export class DrawingController {
       return;
     }
 
+    if (this.dragWall) {
+      this.moveDraggedWall(p);
+      return;
+    }
+
+    if (!this.active || e.pointerId !== this.pointerId) return;
+    if (this.model.status !== 'drawing') return;
     if (this.model.vertices.length === 0) return;
     const snapped = this.snapDraft(p);
     this.model = { ...this.model, draftEnd: snapped };
     this.cfg.onChange();
   };
 
+  private moveDraggedWall(p: Point): void {
+    if (!this.dragWall) return;
+    const { loopIndex, wallIndex, partner, last } = this.dragWall;
+    const loop = this.model.loops[loopIndex];
+    if (!loop) return;
+    const segs = wallSegments(loop.vertices, true);
+    const seg = segs[wallIndex];
+    if (!seg) return;
+
+    const rawDx = p.x - last.x;
+    const rawDy = p.y - last.y;
+    const { dx, dy } = projectOntoNormal(rawDx, rawDy, seg.a, seg.b);
+    if (Math.hypot(dx, dy) < 0.2) return;
+
+    const nextVerts = translateWallBy(loop.vertices, wallIndex, dx, dy);
+    if (!nextVerts) {
+      this.cfg.onReject();
+      return;
+    }
+
+    let loops = this.model.loops.map((L, i) =>
+      i === loopIndex ? { ...L, vertices: nextVerts } : L,
+    );
+
+    if (partner) {
+      const pLoop = loops[partner.partnerLoopIndex];
+      if (pLoop) {
+        const pNext = translateWallBy(
+          pLoop.vertices,
+          partner.partnerWallIndex,
+          dx,
+          dy,
+        );
+        if (!pNext) {
+          this.cfg.onReject();
+          return;
+        }
+        loops = loops.map((L, i) =>
+          i === partner.partnerLoopIndex ? { ...L, vertices: pNext } : L,
+        );
+      }
+    }
+
+    this.model = { ...this.model, loops };
+    this.dragWall = { ...this.dragWall, last: p };
+    this.cfg.onChange();
+  }
+
   private onUp = (e: PointerEvent): void => {
+    if (this.dragDoor) {
+      this.dragDoor = null;
+      this.active = false;
+      this.pointerId = null;
+      this.cfg.onChange();
+      return;
+    }
+    if (this.dragWall) {
+      this.dragWall = null;
+      this.active = false;
+      this.pointerId = null;
+      this.cfg.onChange();
+      return;
+    }
+
     if (!this.active || (this.pointerId !== null && e.pointerId !== this.pointerId)) {
       return;
     }
     this.active = false;
     this.pointerId = null;
-
-    if (this.dragDoor) {
-      this.dragDoor = null;
-      this.cfg.onChange();
-      return;
-    }
 
     const { vertices, draftEnd } = this.model;
     if (!draftEnd || vertices.length === 0) {
@@ -812,7 +904,12 @@ export class DrawingController {
     const len = dist(last, draftEnd);
 
     if (vertices.length === 1 && len < this.cfg.minLengthPx) {
-      this.model = { ...this.model, status: 'idle', vertices: [], draftEnd: null };
+      this.model = {
+        ...this.model,
+        status: 'idle',
+        vertices: [],
+        draftEnd: null,
+      };
       this.cfg.onChange();
       return;
     }

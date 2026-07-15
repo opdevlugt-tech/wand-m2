@@ -20,6 +20,7 @@ import {
   wallPiecesWithDoors,
   wallSegments,
 } from '../geometry/math';
+import { ROOM_CONFIG } from '../config/rooms';
 
 export type RenderOptions = {
   pxPerMeter: number;
@@ -235,7 +236,7 @@ export function drawScene(
       opts.selectedLoopIndex === null &&
       (opts.selectedVertexIndex === i || opts.popupCornerIndex === i);
     const color = isSel ? COLORS.vertexSel : isFirst ? COLORS.first : COLORS.vertex;
-    drawVertex(ctx, p, color, isSel ? 7 : isFirst || isLast ? 6 : 4);
+    drawVertex(ctx, p, color, isSel ? 5 : isFirst || isLast ? 4 : 2.5);
   }
 
   // Partition option previews
@@ -448,11 +449,11 @@ function drawInteriorCorner(
   interiorDeg: number,
   emphasize: boolean,
 ): void {
-  const rIn = emphasize ? 28 : 22;
-  const bi = interiorBisectorRad(prev, corner, next, wind);
   const bad = !isCanonicalAngle(interiorDeg);
+  // Subtieler: kleine boog; chip alleen bij selectie of fout
+  const rIn = emphasize ? 16 : bad ? 12 : 8;
+  const bi = interiorBisectorRad(prev, corner, next, wind);
 
-  // Binnenhoek-boog: groen ok · rood niet-kloppend (45/90/135 ok)
   ctx.beginPath();
   ctx.moveTo(corner.x, corner.y);
   ctx.arc(corner.x, corner.y, rIn, bi.startRad, bi.endRad, bi.sweepRad < 0);
@@ -461,24 +462,28 @@ function drawInteriorCorner(
     ? COLORS.angleBadFill
     : emphasize
       ? COLORS.popupHi
-      : COLORS.interiorFill;
+      : 'rgba(61, 214, 140, 0.10)';
   ctx.fill();
-  ctx.strokeStyle = bad ? COLORS.angleBadStroke : COLORS.interior;
-  ctx.lineWidth = bad ? lw(2) : lw(1.5);
-  ctx.stroke();
+  if (bad || emphasize) {
+    ctx.strokeStyle = bad ? COLORS.angleBadStroke : COLORS.interior;
+    ctx.lineWidth = bad ? lw(1.5) : lw(1);
+    ctx.stroke();
+  }
 
-  const midIn = {
-    x: corner.x + Math.cos(bi.midRad) * (rIn + 10),
-    y: corner.y + Math.sin(bi.midRad) * (rIn + 10),
-  };
-  drawAngleChip(
-    ctx,
-    midIn.x,
-    midIn.y,
-    formatDegrees(interiorDeg, bad || emphasize ? 1 : 0),
-    true,
-    bad,
-  );
+  if (bad || emphasize) {
+    const midIn = {
+      x: corner.x + Math.cos(bi.midRad) * (rIn + 8),
+      y: corner.y + Math.sin(bi.midRad) * (rIn + 8),
+    };
+    drawAngleChip(
+      ctx,
+      midIn.x,
+      midIn.y,
+      formatDegrees(interiorDeg, bad || emphasize ? 1 : 0),
+      true,
+      bad,
+    );
+  }
 }
 
 function drawAngleChip(
@@ -528,22 +533,48 @@ function drawGridWorld(
   y1: number,
   pxPerMeter: number,
 ): void {
-  const step = pxPerMeter;
-  const half = step / 2;
-  const startX = Math.floor(x0 / half) * half;
-  const startY = Math.floor(y0 / half) * half;
+  // Tegelraster: minor = tile (0.3 m), major = 1 m
+  const tileM = ROOM_CONFIG.tileSizeM ?? 0.3;
+  const majorM = ROOM_CONFIG.majorGridM ?? 1;
+  const step = pxPerMeter * tileM;
+  const majorStep = pxPerMeter * majorM;
+  if (step < 2) {
+    // too dense when zoomed out — only major
+    const startX = Math.floor(x0 / majorStep) * majorStep;
+    const startY = Math.floor(y0 / majorStep) * majorStep;
+    ctx.lineWidth = lw(1);
+    ctx.strokeStyle = COLORS.gridMajor;
+    for (let x = startX; x <= x1; x += majorStep) {
+      ctx.beginPath();
+      ctx.moveTo(x, y0);
+      ctx.lineTo(x, y1);
+      ctx.stroke();
+    }
+    for (let y = startY; y <= y1; y += majorStep) {
+      ctx.beginPath();
+      ctx.moveTo(x0, y);
+      ctx.lineTo(x1, y);
+      ctx.stroke();
+    }
+    return;
+  }
+
+  const startX = Math.floor(x0 / step) * step;
+  const startY = Math.floor(y0 / step) * step;
   ctx.lineWidth = lw(1);
-  for (let x = startX; x <= x1; x += half) {
-    const major = Math.abs(Math.round(x / step) * step - x) < 1e-6;
+  for (let x = startX; x <= x1; x += step) {
+    const major = Math.abs(Math.round(x / majorStep) * majorStep - x) < step * 0.25;
     ctx.strokeStyle = major ? COLORS.gridMajor : COLORS.grid;
+    ctx.lineWidth = major ? lw(1.25) : lw(0.75);
     ctx.beginPath();
     ctx.moveTo(x, y0);
     ctx.lineTo(x, y1);
     ctx.stroke();
   }
-  for (let y = startY; y <= y1; y += half) {
-    const major = Math.abs(Math.round(y / step) * step - y) < 1e-6;
+  for (let y = startY; y <= y1; y += step) {
+    const major = Math.abs(Math.round(y / majorStep) * majorStep - y) < step * 0.25;
     ctx.strokeStyle = major ? COLORS.gridMajor : COLORS.grid;
+    ctx.lineWidth = major ? lw(1.25) : lw(0.75);
     ctx.beginPath();
     ctx.moveTo(x0, y);
     ctx.lineTo(x1, y);

@@ -18,6 +18,14 @@ export const ROOM_CONFIG = {
   /** Standaard deurbreedte bij nieuwe deuren / splits */
   defaultDoorWidthM: 0.9,
 
+  /**
+   * Tegelraster: standaard 0,3 × 0,3 m.
+   * minor = tegelmaat; major elke N tegels (default 1 m bij 0,3 → elke ~3,33 → we round to 1m).
+   */
+  tileSizeM: 0.3,
+  /** Major grid every N meters (1 m = dikkere lijn) */
+  majorGridM: 1,
+
   /** Min. aantal deuren per kamer als requireDoor true */
   minDoorsPerRoom: 1,
 
