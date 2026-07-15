@@ -452,7 +452,8 @@ export function boot(root: HTMLElement): void {
       const title = roomDisplayName(L.name, L.roomTypeId, lang === 'en' ? 'en' : 'nl');
       return {
         loopIndex: i,
-        label: `${title} · ${area.toFixed(1)} m²`,
+        label: title,
+        areaText: formatArea(area, 2),
         ok,
         warn,
       };
