@@ -43,14 +43,15 @@ Footer-hint volgt dezelfde flow.
 
 ### Klaar in deze ronde
 - **PNG-export** (knop PNG)
-- **Tab Installaties**: bibliotheek opgeslagen tekeningen + componenten
-- Catalogus **3 categorieën**: Elektra · Water · Afvoer (plaatsen in kamer-midden)
-- Symbolen op plattegrond
+- **Tab Installaties**: zelfde canvas + Electra toolkit (place/drag/rotate)
+- **Leidingen als lijn** (Loze / Bedraad / Aarding) → meters op tekening + bestellijst
+- **Doorvoer verdieping** (DV) als pin-symbool
+- **Bestellijst**: stuks componenten + m leiding (opslaan in plan-JSON)
 
-### Volgende (per categorie uitwerken)
-1. **Elektra** — slepen/plaatsen op klik, wall-snap, aantallen
-2. **Water** — leiding-logica / koppeling aan ruimtes
-3. **Afvoer** — valhoogte / putten
+### Volgende
+1. Water / afvoer
+2. Leiding wall-snap / type per run verfijning
+3. Export bestellijst CSV
 
 Zie ook eerdere P0: demo-plan, dogfood.
 
