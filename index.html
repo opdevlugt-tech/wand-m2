@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0f1419" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Wand-m2" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <title>Wand-m2</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="hud">
+        <div class="hud-left">
+          <strong class="logo" id="logo">Wand-m2</strong>
+          <span id="status" class="status"></span>
+        </div>
+        <div class="hud-right">
+          <div id="lang-picker" class="lang-picker" role="group" aria-label="Language"></div>
+          <label class="scale length-field" id="length-field">
+            <span id="label-wall"></span>
+            <input
+              id="wall-length"
+              type="number"
+              min="0.01"
+              step="0.01"
+              inputmode="decimal"
+              placeholder="—"
+              disabled
+            />
+          </label>
+          <label class="scale angle-field" id="angle-field">
+            <span id="label-angle"></span>
+            <input
+              id="corner-angle"
+              type="number"
+              min="1"
+              max="359"
+              step="0.1"
+              inputmode="decimal"
+              placeholder="—"
+              disabled
+            />
+          </label>
+          <button type="button" id="snap-angle" class="btn" disabled></button>
+          <label class="scale">
+            <span id="label-ppm"></span>
+            <input id="px-per-m" type="number" min="5" max="2000" step="1" value="50" inputmode="numeric" />
+          </label>
+          <button type="button" id="undo" class="btn"></button>
+          <button type="button" id="reset" class="btn btn-danger"></button>
+        </div>
+      </header>
+      <main class="stage">
+        <canvas id="canvas"></canvas>
+        <div id="area-badge" class="area-badge hidden" aria-live="polite"></div>
+
+        <div
+          id="angle-popup"
+          class="popup popup-meetfout hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="angle-popup-title"
+        >
+          <div class="popup-card">
+            <div class="popup-drag-handle" id="popup-drag-handle">
+              <span class="popup-drag-grip" aria-hidden="true">::</span>
+              <p class="popup-kicker" id="popup-kicker"></p>
+            </div>
+            <div class="popup-body">
+              <h2 id="angle-popup-title"></h2>
+              <p id="angle-popup-lead" class="popup-lead"></p>
+              <div id="popup-odd-list" class="popup-odd-list"></div>
+              <div id="popup-main-actions" class="popup-actions">
+                <button type="button" id="angle-ignore" class="btn"></button>
+                <button type="button" id="angle-confirm" class="btn btn-primary"></button>
+                <button type="button" id="angle-relocate" class="btn btn-warn"></button>
+              </div>
+              <div id="popup-relocate-panel" class="popup-relocate hidden">
+                <p class="popup-hint" id="popup-relocate-hint"></p>
+                <div id="popup-corner-picks" class="popup-corner-picks"></div>
+                <div class="popup-actions">
+                  <button type="button" id="angle-relocate-cancel" class="btn"></button>
+                  <button type="button" id="angle-relocate-apply" class="btn btn-warn" disabled></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+      <p class="hint" id="footer-hint"></p>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
