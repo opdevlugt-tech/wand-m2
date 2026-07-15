@@ -181,7 +181,8 @@ export type DoorGeom = {
 
 /**
  * Compute door opening geometry on wall a→b.
- * Returns null if door is wider than wall (minus margins).
+ * Door may fill nearly the whole wall (e.g. 0.9 m on 1.0 m).
+ * Returns null only if door is wider than the wall.
  */
 export function doorGeometry(
   a: Point,
@@ -192,14 +193,22 @@ export function doorGeometry(
 ): DoorGeom | null {
   const wallLenPx = dist(a, b);
   if (wallLenPx < 2 || widthM <= 0 || pxPerMeter <= 0) return null;
-  const halfWidthPx = (widthM * pxPerMeter) / 2;
-  const margin = 4;
-  if (halfWidthPx * 2 + margin * 2 > wallLenPx) return null;
+  const widthPx = widthM * pxPerMeter;
+  // Must fit on wall (allow tiny float slack)
+  if (widthPx > wallLenPx + 0.5) return null;
+
+  const halfWidthPx = widthPx / 2;
+  // Prefer a few px rest on each side, but shrink to 0 when door almost fills wall
+  const rest = Math.max(0, wallLenPx - widthPx);
+  const margin = Math.min(4, rest / 2);
 
   let tCenter = Math.max(0, Math.min(1, t));
   const halfT = halfWidthPx / wallLenPx;
-  // Keep door fully on wall
-  tCenter = Math.max(halfT + margin / wallLenPx, Math.min(1 - halfT - margin / wallLenPx, tCenter));
+  const marginT = margin / wallLenPx;
+  // Keep opening fully on segment; when door ≈ wall, center is forced to 0.5
+  const lo = Math.min(0.5, halfT + marginT);
+  const hi = Math.max(0.5, 1 - halfT - marginT);
+  tCenter = Math.max(lo, Math.min(hi, tCenter));
 
   const openA = pointOnSegment(a, b, tCenter - halfT);
   const openB = pointOnSegment(a, b, tCenter + halfT);

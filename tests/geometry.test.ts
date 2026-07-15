@@ -177,6 +177,17 @@ describe('doors', () => {
     expect(g!.center.x).toBeCloseTo(50, 0);
   });
 
+  it('0.9 m door fits on 1.0 m wall', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 50, y: 0 }; // 1 m at 50 px/m
+    const g = doorGeometry(a, b, 0.5, 0.9, 50);
+    expect(g).not.toBeNull();
+    expect(dist(g!.openA, g!.openB)).toBeCloseTo(45, 4);
+    expect(g!.center.x).toBeCloseTo(25, 1);
+    // still rejects door wider than wall
+    expect(doorGeometry(a, b, 0.5, 1.1, 50)).toBeNull();
+  });
+
   it('wallPiecesWithDoors cuts a gap', () => {
     const a = { x: 0, y: 0 };
     const b = { x: 100, y: 0 };

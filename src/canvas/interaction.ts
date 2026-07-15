@@ -738,8 +738,10 @@ export class DrawingController {
     if (L < 1) return false;
     const ppm = this.cfg.getPxPerMeter();
     const half = (d.widthM * ppm) / 2;
-    const margin = 4;
-    const halfT = Math.min(0.45, (half + margin) / L);
+    // Rest shrinks when door nearly fills wall (0.9 on 1.0 ok)
+    const rest = Math.max(0, L - d.widthM * ppm);
+    const margin = Math.min(4, rest / 2);
+    const halfT = Math.min(0.5, (half + margin) / L);
     let t = projectTOnSegment(p, seg.a, seg.b);
     t = Math.max(halfT, Math.min(1 - halfT, t));
     this.writeLoop(loopIndex, {
