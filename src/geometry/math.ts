@@ -1389,10 +1389,10 @@ export function findPartnerWall(
 }
 
 /**
- * Translate a wall (and its shared partner) by delta. Both endpoints move.
- * Rejects if resulting polygons self-intersect or area collapses.
+ * Translate wall endpoints freely (no collision clamp, no corner break).
+ * Keeps topology simple — both rooms that share a wall get the same delta.
  */
-export function translateWallBy(
+export function translateWallFree(
   vertices: Point[],
   wallIndex: number,
   dx: number,
@@ -1405,15 +1405,39 @@ export function translateWallBy(
   const i1 = (wallIndex + 1) % n;
   next[i0] = { x: next[i0].x + dx, y: next[i0].y + dy };
   next[i1] = { x: next[i1].x + dx, y: next[i1].y + dy };
-  if (polygonSelfIntersects(next, true)) return null;
-  // tiny area guard (px²)
-  let area = 0;
-  for (let i = 0; i < n; i++) {
-    const a = next[i];
-    const b = next[(i + 1) % n];
-    area += a.x * b.y - b.x * a.y;
+  // Only reject collapsed edge
+  if (dist(next[i0], next[i1]) < 2) return null;
+  return next;
+}
+
+/**
+ * After moving a shared wall, force partner edge endpoints onto the same
+ * two points so rooms stay sealed (no loze ruimte / gap).
+ */
+export function syncPartnerWallEndpoints(
+  primaryVerts: Point[],
+  primaryWall: number,
+  partnerVerts: Point[],
+  partnerWall: number,
+): Point[] | null {
+  const nP = primaryVerts.length;
+  const nQ = partnerVerts.length;
+  if (nP < 3 || nQ < 3) return null;
+  const a = primaryVerts[primaryWall];
+  const b = primaryVerts[(primaryWall + 1) % nP];
+  const q0 = partnerVerts[partnerWall];
+  const q1 = partnerVerts[(partnerWall + 1) % nQ];
+  const next = partnerVerts.map((p) => ({ ...p }));
+  // Match orientation: if q0 near a and q1 near b, same; else reverse
+  const same = dist(q0, a) + dist(q1, b);
+  const rev = dist(q0, b) + dist(q1, a);
+  if (same <= rev) {
+    next[partnerWall] = { ...a };
+    next[(partnerWall + 1) % nQ] = { ...b };
+  } else {
+    next[partnerWall] = { ...b };
+    next[(partnerWall + 1) % nQ] = { ...a };
   }
-  if (Math.abs(area) < 200) return null;
   return next;
 }
 
@@ -1516,7 +1540,7 @@ export function translateWallClamped(
       hi = mid;
       continue;
     }
-    const cand = translateWallBy(vertices, wallIndex, tdx, tdy);
+    const cand = translateWallFree(vertices, wallIndex, tdx, tdy);
     if (!cand) {
       hi = mid;
       continue;
