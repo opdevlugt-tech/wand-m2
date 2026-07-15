@@ -798,3 +798,219 @@ export function absorbErrorAtCorner(
 
   return v;
 }
+
+// ─── Partition / split loop ─────────────────────────────────────────
+
+export type PartitionCandidate = {
+  id: string;
+  wallA: number;
+  tA: number;
+  wallB: number;
+  tB: number;
+  a: Point;
+  b: Point;
+};
+
+/** Ray-cast point-in-polygon (boundary counts as inside). */
+export function pointInPolygon(p: Point, vertices: Point[]): boolean {
+  const n = vertices.length;
+  if (n < 3) return false;
+  // On edge?
+  for (let i = 0; i < n; i++) {
+    const a = vertices[i];
+    const b = vertices[(i + 1) % n];
+    if (distPointToSegment(p, a, b) < 1e-6) return true;
+  }
+  let inside = false;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = vertices[i].x;
+    const yi = vertices[i].y;
+    const xj = vertices[j].x;
+    const yj = vertices[j].y;
+    const intersect =
+      yi > p.y !== yj > p.y &&
+      p.x < ((xj - xi) * (p.y - yi)) / (yj - yi + 1e-15) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+/** True if open segment a–b lies inside polygon (samples + no edge crossings). */
+export function chordInsidePolygon(a: Point, b: Point, vertices: Point[]): boolean {
+  const len = dist(a, b);
+  if (len < 8) return false;
+  // Inset endpoints so T-junctions on boundary edges are not false crossings
+  const ux = (b.x - a.x) / len;
+  const uy = (b.y - a.y) / len;
+  const inset = Math.min(3, len * 0.08);
+  const a2 = { x: a.x + ux * inset, y: a.y + uy * inset };
+  const b2 = { x: b.x - ux * inset, y: b.y - uy * inset };
+  const segs = wallSegments(vertices, true);
+  for (const s of segs) {
+    if (segmentsIntersect({ a: a2, b: b2 }, s)) return false;
+  }
+  for (let k = 1; k <= 4; k++) {
+    const t = k / 5;
+    const p = pointOnSegment(a, b, t);
+    if (!pointInPolygon(p, vertices)) return false;
+  }
+  return true;
+}
+
+function wallsAdjacent(i: number, j: number, n: number): boolean {
+  if (i === j) return true;
+  if ((i + 1) % n === j || (j + 1) % n === i) return true;
+  return false;
+}
+
+/**
+ * Candidate partition walls: midpoints and thirds between non-adjacent walls,
+ * plus non-adjacent vertex diagonals.
+ */
+export function listPartitionCandidates(vertices: Point[]): PartitionCandidate[] {
+  const n = vertices.length;
+  if (n < 4) return []; // triangle can't split usefully with wall-to-wall mid
+  const out: PartitionCandidate[] = [];
+  const seen = new Set<string>();
+
+  const push = (wallA: number, tA: number, wallB: number, tB: number): void => {
+    if (wallsAdjacent(wallA, wallB, n)) return;
+    const a = pointOnSegment(vertices[wallA], vertices[(wallA + 1) % n], tA);
+    const b = pointOnSegment(vertices[wallB], vertices[(wallB + 1) % n], tB);
+    if (!chordInsidePolygon(a, b, vertices)) return;
+    // canonical id order
+    let wa = wallA;
+    let ta = tA;
+    let wb = wallB;
+    let tb = tB;
+    let pa = a;
+    let pb = b;
+    if (wa > wb || (wa === wb && ta > tb)) {
+      [wa, wb] = [wb, wa];
+      [ta, tb] = [tb, ta];
+      [pa, pb] = [pb, pa];
+    }
+    const id = `${wa}:${ta.toFixed(2)}-${wb}:${tb.toFixed(2)}`;
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push({ id, wallA: wa, tA: ta, wallB: wb, tB: tb, a: pa, b: pb });
+  };
+
+  const ts = [0.5, 0.33, 0.67];
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue; // adjacent via wrap
+      for (const ta of ts) {
+        for (const tb of ts) {
+          // prefer mids first — still add all unique valid
+          push(i, ta, j, tb);
+        }
+      }
+    }
+  }
+
+  // Cap to keep UI usable: sort by length descending (major splits first), take top 12
+  out.sort((x, y) => dist(y.a, y.b) - dist(x.a, x.b));
+  // Prefer pure mid-mid higher
+  out.sort((x, y) => {
+    const score = (c: PartitionCandidate) =>
+      (Math.abs(c.tA - 0.5) < 0.01 && Math.abs(c.tB - 0.5) < 0.01 ? 1000 : 0) + dist(c.a, c.b);
+    return score(y) - score(x);
+  });
+  return out.slice(0, 12);
+}
+
+/**
+ * Split closed polygon by a chord on two boundary walls into two closed loops.
+ * Doors are not remapped — caller should reattach or drop.
+ */
+export function splitPolygonByPartition(
+  vertices: Point[],
+  wallA: number,
+  tA: number,
+  wallB: number,
+  tB: number,
+): { loopA: Point[]; loopB: Point[] } | null {
+  const n = vertices.length;
+  if (n < 3 || wallA === wallB) return null;
+  if (!chordInsidePolygon(
+    pointOnSegment(vertices[wallA], vertices[(wallA + 1) % n], tA),
+    pointOnSegment(vertices[wallB], vertices[(wallB + 1) % n], tB),
+    vertices,
+  )) {
+    // still allow if near-valid
+  }
+
+  type Mark = { which: 'A' | 'B'; t: number };
+  const onWall: Mark[][] = Array.from({ length: n }, () => []);
+  onWall[wallA].push({ which: 'A', t: tA });
+  onWall[wallB].push({ which: 'B', t: tB });
+  for (const list of onWall) list.sort((x, y) => x.t - y.t);
+
+  const ring: Point[] = [];
+  let iA = -1;
+  let iB = -1;
+
+  for (let wi = 0; wi < n; wi++) {
+    const vStart = vertices[wi];
+    const vEnd = vertices[(wi + 1) % n];
+    // vertex at start of wall
+    const vi = ring.length;
+    ring.push({ ...vStart });
+    for (const m of onWall[wi]) {
+      if (m.t <= 1e-6) {
+        if (m.which === 'A') iA = vi;
+        else iB = vi;
+      } else if (m.t >= 1 - 1e-6) {
+        // maps to next vertex — mark after loop when we know index
+        // store deferred
+      } else {
+        const p = pointOnSegment(vStart, vEnd, m.t);
+        const idx = ring.length;
+        ring.push(p);
+        if (m.which === 'A') iA = idx;
+        else iB = idx;
+      }
+    }
+  }
+
+  // Resolve t≈1 marks: point is next wall's start vertex
+  for (let wi = 0; wi < n; wi++) {
+    for (const m of onWall[wi]) {
+      if (m.t >= 1 - 1e-6) {
+        const nextVi = (wi + 1) % n;
+        // find ring index of vertices[nextVi] — it was pushed as start of wall nextVi
+        // ring order: for wall k we push vertices[k] then edge points
+        // index of vertices[k] = count of points before wall k
+        let idx = 0;
+        for (let k = 0; k < nextVi; k++) {
+          idx += 1; // vertex
+          for (const mm of onWall[k]) {
+            if (mm.t > 1e-6 && mm.t < 1 - 1e-6) idx += 1;
+          }
+        }
+        if (m.which === 'A') iA = idx;
+        else iB = idx;
+      }
+    }
+  }
+
+  if (iA < 0 || iB < 0 || iA === iB) return null;
+  const m = ring.length;
+  const walk = (from: number, to: number): Point[] => {
+    const pts: Point[] = [];
+    let i = from;
+    for (let guard = 0; guard < m + 2; guard++) {
+      pts.push({ ...ring[i] });
+      if (i === to) break;
+      i = (i + 1) % m;
+    }
+    return pts;
+  };
+
+  const loopA = walk(iA, iB);
+  const loopB = walk(iB, iA);
+  if (loopA.length < 3 || loopB.length < 3) return null;
+  if (polygonSelfIntersects(loopA, true) || polygonSelfIntersects(loopB, true)) return null;
+  return { loopA, loopB };
+}

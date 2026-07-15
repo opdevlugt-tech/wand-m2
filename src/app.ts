@@ -9,6 +9,7 @@ import {
   listNonCanonicalCorners,
   totalLoopsAreaM2,
   type InteriorExterior,
+  type PartitionCandidate,
 } from './geometry/math';
 import { DrawingController } from './canvas/interaction';
 import { drawScene, resizeCanvas } from './canvas/renderer';
@@ -41,6 +42,14 @@ export function boot(root: HTMLElement): void {
   const doorField = root.querySelector<HTMLElement>('#door-field');
   const removeDoorBtn = root.querySelector<HTMLButtonElement>('#remove-door');
   const labelDoor = root.querySelector<HTMLElement>('#label-door');
+  const splitLoopBtn = root.querySelector<HTMLButtonElement>('#split-loop');
+  const splitPopup = root.querySelector<HTMLElement>('#split-popup');
+  const splitKicker = root.querySelector<HTMLElement>('#split-kicker');
+  const splitTitle = root.querySelector<HTMLElement>('#split-popup-title');
+  const splitLead = root.querySelector<HTMLElement>('#split-popup-lead');
+  const splitPicks = root.querySelector<HTMLElement>('#split-option-picks');
+  const splitCancel = root.querySelector<HTMLButtonElement>('#split-cancel');
+  const splitApply = root.querySelector<HTMLButtonElement>('#split-apply');
   const undoBtn = root.querySelector<HTMLButtonElement>('#undo');
   const resetBtn = root.querySelector<HTMLButtonElement>('#reset');
   const stage = root.querySelector<HTMLElement>('.stage');
@@ -81,6 +90,14 @@ export function boot(root: HTMLElement): void {
     !doorField ||
     !removeDoorBtn ||
     !labelDoor ||
+    !splitLoopBtn ||
+    !splitPopup ||
+    !splitKicker ||
+    !splitTitle ||
+    !splitLead ||
+    !splitPicks ||
+    !splitCancel ||
+    !splitApply ||
     !undoBtn ||
     !resetBtn ||
     !stage ||
@@ -125,6 +142,11 @@ export function boot(root: HTMLElement): void {
   let popupState: PopupState = null;
   let relocateBase: Point[] | null = null;
   let relocatePreview: Point[] | null = null;
+  let splitState: {
+    loopIndex: number;
+    candidates: PartitionCandidate[];
+    hover: number | null;
+  } | null = null;
 
   const getPxPerMeter = () => {
     const v = Number(pxInput.value);
@@ -144,6 +166,7 @@ export function boot(root: HTMLElement): void {
     snapAngleBtn!.title = tr.snapTitle;
     addDoorBtn!.textContent = tr.addDoor;
     removeDoorBtn!.textContent = tr.removeDoor;
+    splitLoopBtn!.textContent = tr.splitLoop;
     undoBtn!.textContent = tr.undo;
     resetBtn!.textContent = tr.reset;
     popupDragHandle!.title = tr.dragTitle;
@@ -295,6 +318,14 @@ export function boot(root: HTMLElement): void {
           ? relocateBase
           : null,
       ghostLoopIndex: controller.meetfoutLoopIndex,
+      partitionOptions: splitState
+        ? splitState.candidates.map((c, i) => ({
+            a: c.a,
+            b: c.b,
+            label: String(i + 1),
+          }))
+        : undefined,
+      partitionHoverIndex: splitState?.hover ?? null,
     });
   }
 
@@ -498,6 +529,8 @@ export function boot(root: HTMLElement): void {
     const wallOnLoop =
       controller.selection.kind === 'wall' && controller.selection.loopIndex !== null;
     addDoorBtn!.disabled = !wallOnLoop;
+    const li = controller.selectedLoopIndex();
+    splitLoopBtn!.disabled = li === null || (controller.model.loops[li]?.vertices.length ?? 0) < 4;
     if (!door) {
       doorWidthInput!.value = '';
       doorWidthInput!.disabled = true;
@@ -510,6 +543,78 @@ export function boot(root: HTMLElement): void {
       doorField!.classList.add('active');
     }
     syncingDoorField = false;
+  }
+
+  function openSplitPanel(): void {
+    if (popupState) return;
+    const li = controller.selectedLoopIndex();
+    if (li === null) return;
+    const candidates = controller.getPartitionCandidates(li);
+    if (candidates.length === 0) {
+      statusEl!.textContent = tr.splitNone;
+      return;
+    }
+    splitState = { loopIndex: li, candidates, hover: 0 };
+    splitKicker!.textContent = tr.splitKicker;
+    splitTitle!.textContent = tr.splitTitle;
+    splitLead!.textContent = tr.splitLead(candidates.length);
+    splitCancel!.textContent = tr.splitCancel;
+    splitApply!.textContent = tr.splitApply;
+    splitApply!.disabled = false;
+    renderSplitPicks();
+    splitPopup!.classList.remove('hidden');
+    // position like meetfout
+    splitPopup!.classList.remove('popup-dragged');
+    splitPopup!.style.left = '16px';
+    splitPopup!.style.top = '50%';
+    splitPopup!.style.transform = 'translateY(-50%)';
+    statusEl!.textContent = tr.statusSplit(1);
+    paint();
+  }
+
+  function renderSplitPicks(): void {
+    if (!splitState) return;
+    splitPicks!.innerHTML = '';
+    splitState.candidates.forEach((c, i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'corner-pick' + (splitState!.hover === i ? ' active' : '');
+      btn.textContent = String(i + 1);
+      btn.title = `${c.wallA + 1}↔${c.wallB + 1}`;
+      btn.addEventListener('pointerenter', () => {
+        if (!splitState) return;
+        splitState = { ...splitState, hover: i };
+        statusEl!.textContent = tr.statusSplit(i + 1);
+        renderSplitPicks();
+        paint();
+      });
+      btn.addEventListener('click', () => {
+        if (!splitState) return;
+        splitState = { ...splitState, hover: i };
+        splitApply!.disabled = false;
+        renderSplitPicks();
+        paint();
+      });
+      splitPicks!.appendChild(btn);
+    });
+  }
+
+  function closeSplitPanel(): void {
+    splitPopup!.classList.add('hidden');
+    splitState = null;
+    paint();
+  }
+
+  function applySplit(): void {
+    if (!splitState || splitState.hover === null) return;
+    const c = splitState.candidates[splitState.hover];
+    if (!c) return;
+    const li = splitState.loopIndex;
+    closeSplitPanel();
+    if (!controller.splitLoopWithPartition(li, c)) return;
+    syncDoorFieldFromSelection();
+    updateHud(controller.model);
+    paint();
   }
 
   function applyTypedDoorWidth(): void {
@@ -678,6 +783,7 @@ export function boot(root: HTMLElement): void {
 
   undoBtn.addEventListener('click', () => {
     if (popupState) dismissPopup();
+    if (splitState) closeSplitPanel();
     controller.undo();
     syncLengthFieldFromSelection();
     syncAngleFieldFromSelection();
@@ -685,6 +791,7 @@ export function boot(root: HTMLElement): void {
   });
   resetBtn.addEventListener('click', () => {
     if (popupState) dismissPopup();
+    if (splitState) closeSplitPanel();
     controller.reset();
     syncLengthFieldFromSelection();
     syncAngleFieldFromSelection();
@@ -737,6 +844,12 @@ export function boot(root: HTMLElement): void {
     updateHud(controller.model);
     paint();
   });
+  splitLoopBtn.addEventListener('click', () => openSplitPanel());
+  splitCancel.addEventListener('click', () => {
+    closeSplitPanel();
+    updateHud(controller.model);
+  });
+  splitApply.addEventListener('click', () => applySplit());
   doorWidthInput.addEventListener('change', () => applyTypedDoorWidth());
   doorWidthInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {

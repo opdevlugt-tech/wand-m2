@@ -31,6 +31,14 @@ export type Dict = {
   doorM: string;
   addDoor: string;
   removeDoor: string;
+  splitLoop: string;
+  splitKicker: string;
+  splitTitle: string;
+  splitLead: (n: number) => string;
+  splitApply: string;
+  splitCancel: string;
+  splitNone: string;
+  statusSplit: (n: number) => string;
   interiorDeg: string;
   snapTitle: string;
   snapBtn: string;
@@ -71,6 +79,15 @@ export const translations: Record<Lang, Dict> = {
     doorM: 'Deur (m)',
     addDoor: '+ Deur',
     removeDoor: 'Deur weg',
+    splitLoop: 'Deel…',
+    splitKicker: 'Scheidingswand',
+    splitTitle: 'Kies positie scheidingswand',
+    splitLead: (n) =>
+      `${n} optie(s). Hover om te zien; bevestig om de lus in 2 kamers te delen (deur in tussenwand).`,
+    splitApply: 'Deel hier',
+    splitCancel: 'Annuleren',
+    splitNone: 'Geen geldige scheiding voor deze vorm (min. 4 hoeken).',
+    statusSplit: (n) => `Scheiding: optie ${n} · hover over nummers`,
     interiorDeg: 'Binnenhoek (°)',
     snapTitle: 'Zet binnenhoek op 45° / 90° / 135° (45°-raster)',
     snapBtn: '→45/90/135',
@@ -93,7 +110,7 @@ export const translations: Record<Lang, Dict> = {
     residual: 'restfout',
     hoverCorner: (n) => `Hover: live vorm met restfout bij hoek ${n}`,
     hint:
-      'Meerdere lussen. Muur selecteren → + Deur. Sleep deur, typ breedte. Maten per lijn. Talen: vlaggen.',
+      'Meerdere lussen. Deel… = scheidingswand-opties (hover). + Deur op muur. Maten per lijn.',
   },
   en: {
     pageTitle: 'Wall-m²',
@@ -112,6 +129,15 @@ export const translations: Record<Lang, Dict> = {
     doorM: 'Door (m)',
     addDoor: '+ Door',
     removeDoor: 'Remove door',
+    splitLoop: 'Split…',
+    splitKicker: 'Partition wall',
+    splitTitle: 'Choose partition position',
+    splitLead: (n) =>
+      `${n} option(s). Hover to preview; confirm to split into 2 rooms (door in partition).`,
+    splitApply: 'Split here',
+    splitCancel: 'Cancel',
+    splitNone: 'No valid partition for this shape (need ≥4 corners).',
+    statusSplit: (n) => `Partition: option ${n} · hover numbers`,
     interiorDeg: 'Interior (°)',
     snapTitle: 'Snap interior to 45° / 90° / 135°',
     snapBtn: '→45/90/135',
@@ -153,6 +179,15 @@ export const translations: Record<Lang, Dict> = {
     doorM: 'Puerta (m)',
     addDoor: '+ Puerta',
     removeDoor: 'Quitar puerta',
+    splitLoop: 'Dividir…',
+    splitKicker: 'Tabique',
+    splitTitle: 'Elige posición del tabique',
+    splitLead: (n) =>
+      `${n} opción(es). Pasa el ratón para ver; confirma para dividir en 2 (puerta en tabique).`,
+    splitApply: 'Dividir aquí',
+    splitCancel: 'Cancelar',
+    splitNone: 'Sin partición válida (≥4 esquinas).',
+    statusSplit: (n) => `Tabique: opción ${n}`,
     interiorDeg: 'Interior (°)',
     snapTitle: 'Ajustar interior a 45° / 90° / 135°',
     snapBtn: '→45/90/135',
@@ -194,6 +229,15 @@ export const translations: Record<Lang, Dict> = {
     doorM: 'Drzwi (m)',
     addDoor: '+ Drzwi',
     removeDoor: 'Usuń drzwi',
+    splitLoop: 'Podziel…',
+    splitKicker: 'Ściana działowa',
+    splitTitle: 'Wybierz pozycję ściany',
+    splitLead: (n) =>
+      `${n} opcji. Najedź, aby podgląd; potwierdź podział na 2 (drzwi w ścianie).`,
+    splitApply: 'Podziel tu',
+    splitCancel: 'Anuluj',
+    splitNone: 'Brak poprawnej ściany (≥4 narożniki).',
+    statusSplit: (n) => `Podział: opcja ${n}`,
     interiorDeg: 'Kąt wewn. (°)',
     snapTitle: 'Ustaw kąt na 45° / 90° / 135°',
     snapBtn: '→45/90/135',
@@ -235,6 +279,15 @@ export const translations: Record<Lang, Dict> = {
     doorM: 'Дверь (м)',
     addDoor: '+ Дверь',
     removeDoor: 'Убрать дверь',
+    splitLoop: 'Разделить…',
+    splitKicker: 'Перегородка',
+    splitTitle: 'Выберите позицию перегородки',
+    splitLead: (n) =>
+      `${n} вариант(ов). Наведите для превью; подтвердите разделение на 2 (дверь в стене).`,
+    splitApply: 'Разделить',
+    splitCancel: 'Отмена',
+    splitNone: 'Нет допустимой перегородки (≥4 угла).',
+    statusSplit: (n) => `Перегородка: вариант ${n}`,
     interiorDeg: 'Угол (°)',
     snapTitle: 'Привязать угол к 45° / 90° / 135°',
     snapBtn: '→45/90/135',

@@ -33,6 +33,9 @@ export type RenderOptions = {
   popupCornerIndex: number | null;
   ghostVertices?: Point[] | null;
   ghostLoopIndex?: number | null;
+  /** Partition candidates while choosing split */
+  partitionOptions?: { a: { x: number; y: number }; b: { x: number; y: number }; label: string }[];
+  partitionHoverIndex?: number | null;
 };
 
 const COLORS = {
@@ -203,6 +206,20 @@ export function drawScene(
       (opts.selectedVertexIndex === i || opts.popupCornerIndex === i);
     const color = isSel ? COLORS.vertexSel : isFirst ? COLORS.first : COLORS.vertex;
     drawVertex(ctx, p, color, isSel ? 7 : isFirst || isLast ? 6 : 4);
+  }
+
+  // Partition option previews
+  const parts = opts.partitionOptions ?? [];
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    const hi = opts.partitionHoverIndex === i;
+    strokeSeg(ctx, p.a, p.b, hi ? '#ffd166' : 'rgba(200, 150, 255, 0.75)', hi ? 4 : 2.5, true);
+    const m = mid(p.a, p.b);
+    drawTinyTag(ctx, m.x, m.y, p.label);
+    if (hi) {
+      drawVertex(ctx, p.a, COLORS.doorSel, 5);
+      drawVertex(ctx, p.b, COLORS.doorSel, 5);
+    }
   }
 }
 

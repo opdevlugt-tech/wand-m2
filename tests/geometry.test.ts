@@ -24,6 +24,8 @@ import {
   setSegmentLengthPx,
   doorGeometry,
   wallPiecesWithDoors,
+  listPartitionCandidates,
+  splitPolygonByPartition,
 } from '../src/geometry/math';
 import type { Point } from '../src/geometry/types';
 
@@ -179,6 +181,34 @@ describe('doors', () => {
     expect(pieces.length).toBe(2);
     expect(pieces[0].a.x).toBeCloseTo(0, 5);
     expect(pieces[1].b.x).toBeCloseTo(100, 5);
+  });
+});
+
+describe('partition split', () => {
+  const square = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 100, y: 100 },
+    { x: 0, y: 100 },
+  ];
+
+  it('lists mid-mid candidates for square', () => {
+    const c = listPartitionCandidates(square);
+    expect(c.length).toBeGreaterThan(0);
+    // opposite mids wall0-wall2 or wall1-wall3
+    expect(c.some((x) => Math.abs(x.tA - 0.5) < 0.02 && Math.abs(x.tB - 0.5) < 0.02)).toBe(
+      true,
+    );
+  });
+
+  it('splits square into two rectangles', () => {
+    const split = splitPolygonByPartition(square, 0, 0.5, 2, 0.5);
+    expect(split).not.toBeNull();
+    expect(split!.loopA.length).toBeGreaterThanOrEqual(3);
+    expect(split!.loopB.length).toBeGreaterThanOrEqual(3);
+    const a1 = polygonAreaM2(split!.loopA, 1);
+    const a2 = polygonAreaM2(split!.loopB, 1);
+    expect(a1 + a2).toBeCloseTo(10000, 0);
   });
 });
 

@@ -11,6 +11,8 @@ import {
   interiorExteriorAt,
   type InteriorExterior,
   listNonCanonicalCorners,
+  listPartitionCandidates,
+  type PartitionCandidate,
   moveNextForCornerAngle,
   nearPoint,
   pointFromPolar,
@@ -21,6 +23,7 @@ import {
   snapAngleRelative,
   snapCornerToCanonical,
   snapWorldAngle,
+  splitPolygonByPartition,
   wallSegments,
   wouldIntersect,
 } from '../geometry/math';
@@ -358,6 +361,80 @@ export class DrawingController {
     if (!loop) return false;
     this.writeLoop(li, { doors: loop.doors.filter((d) => d.id !== doorId) });
     this.setSelection({ kind: 'none' });
+    this.cfg.onChange();
+    return true;
+  }
+
+  /** Loop index under current selection (committed only). */
+  selectedLoopIndex(): number | null {
+    if (this.selection.kind === 'none') return null;
+    if (this.selection.kind === 'door') return this.selection.loopIndex;
+    return this.selection.loopIndex;
+  }
+
+  getPartitionCandidates(loopIndex: number): PartitionCandidate[] {
+    const loop = this.model.loops[loopIndex];
+    if (!loop || loop.vertices.length < 4) return [];
+    return listPartitionCandidates(loop.vertices);
+  }
+
+  /**
+   * Split loop into two by partition candidate. Adds a door on the shared wall of each room.
+   */
+  splitLoopWithPartition(loopIndex: number, c: PartitionCandidate): boolean {
+    const loop = this.model.loops[loopIndex];
+    if (!loop) return false;
+    const split = splitPolygonByPartition(
+      loop.vertices,
+      c.wallA,
+      c.tA,
+      c.wallB,
+      c.tB,
+    );
+    if (!split) {
+      this.cfg.onReject();
+      return false;
+    }
+
+    const doorOnPartition = (verts: Point[]): Door[] => {
+      // closed: partition is last→first edge = wall index verts.length-1
+      const wi = verts.length - 1;
+      if (wi < 0) return [];
+      const segs = wallSegments(verts, true);
+      const seg = segs[wi];
+      if (!seg) return [];
+      const widthM = DEFAULT_DOOR_M;
+      const g = doorGeometry(seg.a, seg.b, 0.5, widthM, this.cfg.getPxPerMeter());
+      if (!g) return [];
+      return [
+        {
+          id: newDoorId(),
+          wallIndex: wi,
+          t: 0.5,
+          widthM,
+        },
+      ];
+    };
+
+    const loopA: Loop = {
+      id: newLoopId(),
+      vertices: split.loopA,
+      doors: doorOnPartition(split.loopA),
+    };
+    const loopB: Loop = {
+      id: newLoopId(),
+      vertices: split.loopB,
+      doors: doorOnPartition(split.loopB),
+    };
+    const loops = [
+      ...this.model.loops.slice(0, loopIndex),
+      loopA,
+      loopB,
+      ...this.model.loops.slice(loopIndex + 1),
+    ];
+    this.model = { ...this.model, loops };
+    this.meetfoutLoopIndex = null;
+    this.setSelection({ kind: 'wall', loopIndex, wallIndex: 0 }, true, false);
     this.cfg.onChange();
     return true;
   }

@@ -65,6 +65,7 @@
             />
           </label>
           <button type="button" id="remove-door" class="btn btn-danger" disabled></button>
+          <button type="button" id="split-loop" class="btn" disabled></button>
           <label class="scale">
             <span id="label-ppm"></span>
             <input id="px-per-m" type="number" min="5" max="2000" step="1" value="50" inputmode="numeric" />
@@ -105,6 +106,30 @@
                   <button type="button" id="angle-relocate-cancel" class="btn"></button>
                   <button type="button" id="angle-relocate-apply" class="btn btn-warn" disabled></button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          id="split-popup"
+          class="popup popup-meetfout hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="split-popup-title"
+        >
+          <div class="popup-card">
+            <div class="popup-drag-handle" id="split-drag-handle">
+              <span class="popup-drag-grip" aria-hidden="true">::</span>
+              <p class="popup-kicker" id="split-kicker"></p>
+            </div>
+            <div class="popup-body">
+              <h2 id="split-popup-title"></h2>
+              <p id="split-popup-lead" class="popup-lead"></p>
+              <div id="split-option-picks" class="popup-corner-picks"></div>
+              <div class="popup-actions">
+                <button type="button" id="split-cancel" class="btn"></button>
+                <button type="button" id="split-apply" class="btn btn-primary" disabled></button>
               </div>
             </div>
           </div>
