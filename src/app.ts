@@ -89,6 +89,9 @@ export function boot(root: HTMLElement): void {
   const zoomOutBtn = root.querySelector<HTMLButtonElement>('#zoom-out');
   const zoomResetBtn = root.querySelector<HTMLButtonElement>('#zoom-reset');
   const undoBtn = root.querySelector<HTMLButtonElement>('#undo');
+  const saveBtn = root.querySelector<HTMLButtonElement>('#save');
+  const loadBtn = root.querySelector<HTMLButtonElement>('#load');
+  const loadFile = root.querySelector<HTMLInputElement>('#load-file');
   const resetBtn = root.querySelector<HTMLButtonElement>('#reset');
   const stage = root.querySelector<HTMLElement>('.stage');
   const popup = root.querySelector<HTMLElement>('#angle-popup');
@@ -152,6 +155,9 @@ export function boot(root: HTMLElement): void {
     !zoomOutBtn ||
     !zoomResetBtn ||
     !undoBtn ||
+    !saveBtn ||
+    !loadBtn ||
+    !loadFile ||
     !resetBtn ||
     !stage ||
     !popup ||
@@ -1090,6 +1096,79 @@ export function boot(root: HTMLElement): void {
     updateHud(controller.model);
     paint();
   });
+
+  const SAVE_KEY = 'wand-m2-autosave';
+
+  function buildSavePayload() {
+    return {
+      v: 1,
+      savedAt: new Date().toISOString(),
+      pxPerMeter: getPxPerMeter(),
+      model: controller.model,
+    };
+  }
+
+  function applyLoadedPayload(data: {
+    pxPerMeter?: number;
+    model?: DrawingModel;
+  }): boolean {
+    if (!data?.model || !Array.isArray(data.model.loops)) return false;
+    if (typeof data.pxPerMeter === 'number' && data.pxPerMeter > 0) {
+      pxInput!.value = String(Math.round(data.pxPerMeter));
+    }
+    controller.loadModel(data.model);
+    if (popupState) dismissPopup();
+    if (splitState) closeSplitPanel();
+    syncLengthFieldFromSelection();
+    syncAngleFieldFromSelection();
+    syncDoorFieldFromSelection();
+    updateHud(controller.model);
+    paint();
+    return true;
+  }
+
+  function persistLocal(): void {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(buildSavePayload()));
+    } catch {
+      /* quota / private mode */
+    }
+  }
+
+  saveBtn.addEventListener('click', () => {
+    const payload = buildSavePayload();
+    persistLocal();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    });
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    a.href = URL.createObjectURL(blob);
+    a.download = `wand-m2-${stamp}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    statusEl!.textContent = 'Opgeslagen (bestand + browser)';
+  });
+
+  loadBtn.addEventListener('click', () => loadFile!.click());
+  loadFile.addEventListener('change', async () => {
+    const file = loadFile.files?.[0];
+    loadFile.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!applyLoadedPayload(data)) {
+        statusEl!.textContent = 'Ongeldig bestand';
+        return;
+      }
+      persistLocal();
+      statusEl!.textContent = `Geladen: ${file.name}`;
+    } catch {
+      statusEl!.textContent = 'Laden mislukt';
+    }
+  });
+
   resetBtn.addEventListener('click', () => {
     if (popupState) dismissPopup();
     if (splitState) closeSplitPanel();

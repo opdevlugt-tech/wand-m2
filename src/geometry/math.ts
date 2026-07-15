@@ -1493,7 +1493,7 @@ export function wallMoveCrosses(
 
 /**
  * Binary-search max scale of (dx,dy) that keeps polygon valid and not crossing.
- * Also snaps moved endpoints to nearby corners (creates clean corner alignment).
+ * No corner-break / endpoint snap — walls stay as-is and simply stop before collision.
  */
 export function translateWallClamped(
   vertices: Point[],
@@ -1501,11 +1501,10 @@ export function translateWallClamped(
   dx: number,
   dy: number,
   obstacles: Segment[] = [],
-  cornerSnapPx = 14,
+  _cornerSnapPx = 0,
 ): Point[] | null {
   if (Math.hypot(dx, dy) < 1e-6) return vertices.map((p) => ({ ...p }));
 
-  // Binary search scale in [0,1]
   let lo = 0;
   let hi = 1;
   let best: Point[] | null = null;
@@ -1524,35 +1523,6 @@ export function translateWallClamped(
     }
     best = cand;
     lo = mid;
-  }
-  if (!best) return null;
-
-  // Snap moved endpoints to nearby non-adjacent corners → “break” at corner
-  const n = best.length;
-  const i0 = wallIndex;
-  const i1 = (wallIndex + 1) % n;
-  const snapEnd = (idx: number): void => {
-    const p = best![idx];
-    let nearest: Point | null = null;
-    let bestD = cornerSnapPx;
-    for (let i = 0; i < n; i++) {
-      if (i === i0 || i === i1) continue;
-      const d = dist(p, best![i]);
-      if (d < bestD) {
-        bestD = d;
-        nearest = best![i];
-      }
-    }
-    if (nearest) {
-      best![idx] = { ...nearest };
-    }
-  };
-  snapEnd(i0);
-  snapEnd(i1);
-  if (polygonSelfIntersects(best, true)) {
-    // snap made it bad — return pre-snap best without snap
-    const mid = lo;
-    return translateWallBy(vertices, wallIndex, dx * mid, dy * mid);
   }
   return best;
 }

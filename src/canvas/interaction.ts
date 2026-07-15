@@ -766,14 +766,36 @@ export class DrawingController {
     this.pointerId = null;
     this.dragDoor = null;
     this.dragWall = null;
-    
+    this.emitSelection();
+    this.cfg.onChange();
+  }
+
+  /** Replace drawing state (load from file). Clears undo history. */
+  loadModel(model: DrawingModel): void {
+    this.history = [];
+    this.historyLocked = true;
+    this.model = {
+      loops: model.loops ?? [],
+      status: model.status ?? 'idle',
+      vertices: model.vertices ?? [],
+      draftEnd: model.draftEnd ?? null,
+      partitionPath: model.partitionPath ?? null,
+      partitionLoopIndex: model.partitionLoopIndex ?? null,
+    };
+    this.selection = { kind: 'none' };
+    this.meetfoutLoopIndex =
+      this.model.loops.length > 0 ? this.model.loops.length - 1 : null;
+    this.active = false;
+    this.pointerId = null;
+    this.dragDoor = null;
+    this.dragWall = null;
+    this.historyLocked = false;
     this.emitSelection();
     this.cfg.onChange();
   }
 
   /**
    * Undo last user action (split, muur, deur, tekenen, …).
-   * Not the same as “delete last vertex only”.
    */
   undo(): boolean {
     const prev = this.history.pop();
@@ -790,7 +812,6 @@ export class DrawingController {
     this.pointerId = null;
     this.dragDoor = null;
     this.dragWall = null;
-    
     this.emitSelection();
     this.cfg.onChange();
     return true;

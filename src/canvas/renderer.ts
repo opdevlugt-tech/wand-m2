@@ -17,6 +17,7 @@ import {
   relativeTurnDeg,
   wallPiecesWithDoors,
   wallSegments,
+  findPartnerWall,
 } from '../geometry/math';
 import { ROOM_CONFIG } from '../config/rooms';
 
@@ -694,79 +695,258 @@ function drawLengthLabel(
   ctx.fillText(text, x, y);
 }
 
-/** Total length × width (axis-aligned bbox) around all geometry. */
+/**
+ * Outer total dims: merge collinear exterior walls (no shared partition)
+ * so a 5 m outer wall still shows 5 m after a partition splits it into pieces.
+ * Drawn on the four extremes (min/max X and Y).
+ */
 function drawOverallDimensions(
   ctx: CanvasRenderingContext2D,
   model: DrawingModel,
   pxPerMeter: number,
 ): void {
-  const pts: Point[] = [];
-  for (const L of model.loops ?? []) {
-    for (const v of L.vertices) pts.push(v);
-  }
-  for (const v of model.vertices ?? []) pts.push(v);
-  if (model.draftEnd) pts.push(model.draftEnd);
-  if (pts.length < 2) return;
+  const exterior = listExteriorSegments(model);
+  if (exterior.length < 1) return;
 
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  for (const p of pts) {
-    minX = Math.min(minX, p.x);
-    minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x);
-    maxY = Math.max(maxY, p.y);
+  for (const s of exterior) {
+    minX = Math.min(minX, s.a.x, s.b.x);
+    minY = Math.min(minY, s.a.y, s.b.y);
+    maxX = Math.max(maxX, s.a.x, s.b.x);
+    maxY = Math.max(maxY, s.a.y, s.b.y);
   }
-  const w = maxX - minX;
-  const h = maxY - minY;
-  if (w < 4 || h < 4) return;
+  // include active chain so unfinished plans still show totals
+  for (const v of model.vertices ?? []) {
+    minX = Math.min(minX, v.x);
+    minY = Math.min(minY, v.y);
+    maxX = Math.max(maxX, v.x);
+    maxY = Math.max(maxY, v.y);
+  }
+  if (!(maxX > minX) || !(maxY > minY)) return;
 
-  const gap = lw(28); // outer ring offset
-  const tick = lw(6);
-  const col = 'rgba(108, 182, 255, 0.65)';
+  const eps = 6; // collinear / on-face tolerance (world px)
+  const horiz = mergeAxisSpans(exterior, 'h', eps);
+  const vert = mergeAxisSpans(exterior, 'v', eps);
+
+  // Outer faces only: bottom (maxY), top (minY), left (minX), right (maxX)
+  const bottom = horiz.filter((s) => Math.abs(s.line - maxY) <= eps);
+  const top = horiz.filter((s) => Math.abs(s.line - minY) <= eps);
+  const left = vert.filter((s) => Math.abs(s.line - minX) <= eps);
+  const right = vert.filter((s) => Math.abs(s.line - maxX) <= eps);
+
+  const gap1 = lw(26);
+  const gap2 = lw(44); // second ring further out if multiple spans
+  const col = 'rgba(108, 182, 255, 0.75)';
   const txtCol = '#9ad4ff';
 
+  // Bottom: total outer width(s)
+  drawOuterHorizDims(ctx, bottom, maxY + gap1, pxPerMeter, col, txtCol, 1);
+  // If single span on bottom equals full bbox, also show as “totaal”
+  const fullW = maxX - minX;
+  if (bottom.length === 0 || !bottom.some((s) => Math.abs(s.len - fullW) < eps)) {
+    // always draw full envelope width as outer total ring
+    drawOneHorizDim(ctx, minX, maxX, maxY + gap2, pxPerMeter, col, txtCol, 'totaal');
+  } else {
+    // label the full one as totaal if it matches envelope
+    for (const s of bottom) {
+      if (Math.abs(s.len - fullW) < eps) {
+        drawOneHorizDim(ctx, s.t0, s.t1, maxY + gap2, pxPerMeter, col, txtCol, 'totaal');
+      }
+    }
+  }
+
+  // Top outer spans (without double-drawing full if same as bottom)
+  drawOuterHorizDims(ctx, top, minY - gap1, pxPerMeter, col, txtCol, -1);
+
+  // Left: total outer height(s)
+  drawOuterVertDims(ctx, left, minX - gap1, pxPerMeter, col, txtCol, -1);
+  const fullH = maxY - minY;
+  if (left.length === 0 || !left.some((s) => Math.abs(s.len - fullH) < eps)) {
+    drawOneVertDim(ctx, minY, maxY, minX - gap2, pxPerMeter, col, txtCol, 'totaal');
+  } else {
+    for (const s of left) {
+      if (Math.abs(s.len - fullH) < eps) {
+        drawOneVertDim(ctx, s.t0, s.t1, minX - gap2, pxPerMeter, col, txtCol, 'totaal');
+      }
+    }
+  }
+  drawOuterVertDims(ctx, right, maxX + gap1, pxPerMeter, col, txtCol, 1);
+}
+
+type AxisSpan = { line: number; t0: number; t1: number; len: number };
+
+/** Exterior wall segments = not shared with another room. */
+function listExteriorSegments(model: DrawingModel): { a: Point; b: Point }[] {
+  const out: { a: Point; b: Point }[] = [];
+  const loops = model.loops ?? [];
+  for (let li = 0; li < loops.length; li++) {
+    const segs = wallSegments(loops[li].vertices, true);
+    for (let wi = 0; wi < segs.length; wi++) {
+      if (findPartnerWall(loops, li, wi)) continue; // interior partition
+      out.push(segs[wi]);
+    }
+  }
+  // open chain edges count as exterior while drawing
+  for (const s of wallSegments(model.vertices ?? [], false)) {
+    out.push(s);
+  }
+  return out;
+}
+
+/**
+ * Merge collinear almost-horizontal or almost-vertical exterior segments
+ * on the same line into continuous spans (fixes split-by-partition).
+ */
+function mergeAxisSpans(
+  segs: { a: Point; b: Point }[],
+  axis: 'h' | 'v',
+  eps: number,
+): AxisSpan[] {
+  type Piece = { line: number; t0: number; t1: number };
+  const pieces: Piece[] = [];
+  for (const s of segs) {
+    const dx = Math.abs(s.b.x - s.a.x);
+    const dy = Math.abs(s.b.y - s.a.y);
+    if (axis === 'h') {
+      if (dy > eps || dx < 2) continue; // not horizontal
+      const line = (s.a.y + s.b.y) / 2;
+      pieces.push({
+        line,
+        t0: Math.min(s.a.x, s.b.x),
+        t1: Math.max(s.a.x, s.b.x),
+      });
+    } else {
+      if (dx > eps || dy < 2) continue; // not vertical
+      const line = (s.a.x + s.b.x) / 2;
+      pieces.push({
+        line,
+        t0: Math.min(s.a.y, s.b.y),
+        t1: Math.max(s.a.y, s.b.y),
+      });
+    }
+  }
+  if (!pieces.length) return [];
+
+  // cluster by line value
+  pieces.sort((a, b) => a.line - b.line || a.t0 - b.t0);
+  const clusters: Piece[][] = [];
+  for (const p of pieces) {
+    const last = clusters[clusters.length - 1];
+    if (last && Math.abs(last[0].line - p.line) <= eps) last.push(p);
+    else clusters.push([p]);
+  }
+
+  const spans: AxisSpan[] = [];
+  for (const cl of clusters) {
+    const line = cl.reduce((s, p) => s + p.line, 0) / cl.length;
+    const sorted = [...cl].sort((a, b) => a.t0 - b.t0);
+    let cur0 = sorted[0].t0;
+    let cur1 = sorted[0].t1;
+    const flush = () => {
+      const len = cur1 - cur0;
+      if (len > 2) spans.push({ line, t0: cur0, t1: cur1, len });
+    };
+    for (let i = 1; i < sorted.length; i++) {
+      const p = sorted[i];
+      if (p.t0 <= cur1 + eps) {
+        cur1 = Math.max(cur1, p.t1);
+      } else {
+        flush();
+        cur0 = p.t0;
+        cur1 = p.t1;
+      }
+    }
+    flush();
+  }
+  return spans;
+}
+
+function drawOuterHorizDims(
+  ctx: CanvasRenderingContext2D,
+  spans: AxisSpan[],
+  yDim: number,
+  pxPerMeter: number,
+  col: string,
+  txtCol: string,
+  _side: 1 | -1,
+): void {
+  for (const s of spans) {
+    // only show merged total if it spans more than one “piece” worth — always show if longer
+    if (s.len < 8) continue;
+    drawOneHorizDim(ctx, s.t0, s.t1, yDim, pxPerMeter, col, txtCol);
+  }
+}
+
+function drawOuterVertDims(
+  ctx: CanvasRenderingContext2D,
+  spans: AxisSpan[],
+  xDim: number,
+  pxPerMeter: number,
+  col: string,
+  txtCol: string,
+  _side: 1 | -1,
+): void {
+  for (const s of spans) {
+    if (s.len < 8) continue;
+    drawOneVertDim(ctx, s.t0, s.t1, xDim, pxPerMeter, col, txtCol);
+  }
+}
+
+function drawOneHorizDim(
+  ctx: CanvasRenderingContext2D,
+  x0: number,
+  x1: number,
+  yDim: number,
+  pxPerMeter: number,
+  col: string,
+  txtCol: string,
+  tag?: string,
+): void {
+  const tick = lw(5);
   ctx.strokeStyle = col;
   ctx.lineWidth = lw(1.1);
-  ctx.setLineDash([]);
-
-  // Bottom: total width
-  const yDim = maxY + gap;
   ctx.beginPath();
-  ctx.moveTo(minX, maxY + lw(4));
-  ctx.lineTo(minX, yDim + tick);
-  ctx.moveTo(maxX, maxY + lw(4));
-  ctx.lineTo(maxX, yDim + tick);
-  ctx.moveTo(minX, yDim);
-  ctx.lineTo(maxX, yDim);
+  ctx.moveTo(x0, yDim - tick);
+  ctx.lineTo(x0, yDim + tick);
+  ctx.moveTo(x1, yDim - tick);
+  ctx.lineTo(x1, yDim + tick);
+  ctx.moveTo(x0, yDim);
+  ctx.lineTo(x1, yDim);
   ctx.stroke();
-  drawDimText(
-    ctx,
-    (minX + maxX) / 2,
-    yDim + lw(10),
-    formatMeters(w / pxPerMeter),
-    txtCol,
-  );
+  const label = tag
+    ? `${tag} ${formatMeters((x1 - x0) / pxPerMeter)}`
+    : formatMeters((x1 - x0) / pxPerMeter);
+  drawDimText(ctx, (x0 + x1) / 2, yDim + lw(11), label, txtCol);
+}
 
-  // Left: total height
-  const xDim = minX - gap;
+function drawOneVertDim(
+  ctx: CanvasRenderingContext2D,
+  y0: number,
+  y1: number,
+  xDim: number,
+  pxPerMeter: number,
+  col: string,
+  txtCol: string,
+  tag?: string,
+): void {
+  const tick = lw(5);
+  ctx.strokeStyle = col;
+  ctx.lineWidth = lw(1.1);
   ctx.beginPath();
-  ctx.moveTo(minX - lw(4), minY);
-  ctx.lineTo(xDim - tick, minY);
-  ctx.moveTo(minX - lw(4), maxY);
-  ctx.lineTo(xDim - tick, maxY);
-  ctx.moveTo(xDim, minY);
-  ctx.lineTo(xDim, maxY);
+  ctx.moveTo(xDim - tick, y0);
+  ctx.lineTo(xDim + tick, y0);
+  ctx.moveTo(xDim - tick, y1);
+  ctx.lineTo(xDim + tick, y1);
+  ctx.moveTo(xDim, y0);
+  ctx.lineTo(xDim, y1);
   ctx.stroke();
-  // rotate text for height? keep horizontal for readability
-  drawDimText(
-    ctx,
-    xDim - lw(12),
-    (minY + maxY) / 2,
-    formatMeters(h / pxPerMeter),
-    txtCol,
-  );
+  const label = tag
+    ? `${tag} ${formatMeters((y1 - y0) / pxPerMeter)}`
+    : formatMeters((y1 - y0) / pxPerMeter);
+  drawDimText(ctx, xDim - lw(14), (y0 + y1) / 2, label, txtCol);
 }
 
 function drawDimText(
