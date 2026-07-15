@@ -15,8 +15,8 @@
     <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
     <title>Wand-m2</title>
-    <script type="module" crossorigin src="/wand-m2/assets/index-b7ShjuXQ.js"></script>
-    <link rel="stylesheet" crossorigin href="/wand-m2/assets/index-CzhX-wbo.css">
+    <script type="module" crossorigin src="/wand-m2/assets/index-C0q8bMBw.js"></script>
+    <link rel="stylesheet" crossorigin href="/wand-m2/assets/index-D6zireu_.css">
   </head>
   <body>
     <div id="app">
@@ -79,12 +79,20 @@
 
           <div class="tool-group tool-group-primary" title="Kamers & scheiding">
             <label class="room-type-field" id="room-type-field">
-              <span id="label-room-type">Kamer</span>
-              <select id="room-type">
-                <option value="other">Overig</option>
-                <option value="single">1p ≥3,5 m²</option>
-                <option value="double">2p ≥7 m²</option>
-              </select>
+              <span id="label-room-type">Type</span>
+              <select id="room-type"></select>
+            </label>
+            <label class="room-name-field" id="room-name-field">
+              <span id="label-room-name">Ruimte</span>
+              <input
+                id="room-name"
+                type="text"
+                list="room-name-presets"
+                placeholder="bijv. Slaapkamer"
+                disabled
+                autocomplete="off"
+              />
+              <datalist id="room-name-presets"></datalist>
             </label>
             <button type="button" id="partition-draw" class="btn btn-primary" disabled title="Vrije scheidingswand: muur → hoeken → muur">
               ✂ Scheiding
