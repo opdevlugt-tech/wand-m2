@@ -57,6 +57,17 @@ export type RenderOptions = {
     selected?: boolean;
     rot?: number;
   }[];
+  /** Getekende leidingen (polyline) + live draft */
+  runs?: {
+    points: { x: number; y: number }[];
+    defId: string;
+    selected?: boolean;
+  }[];
+  runDraft?: {
+    points: { x: number; y: number }[];
+    cursor?: { x: number; y: number } | null;
+    defId: string;
+  } | null;
 };
 
 /** Screen-constant line width under zoom */
@@ -315,7 +326,82 @@ export function drawScene(
     }
   }
 
+  // Leidingen (polyline) + labels in m
+  drawInstallRuns(ctx, opts);
+
   ctx.restore();
+}
+
+function drawInstallRuns(ctx: CanvasRenderingContext2D, opts: RenderOptions): void {
+  const ppm = opts.pxPerMeter > 0 ? opts.pxPerMeter : 50;
+  const strokeW = lw(1.6);
+
+  const paintRun = (
+    points: Point[],
+    defId: string,
+    selected: boolean,
+    draft: boolean,
+  ) => {
+    if (points.length < 1) return;
+    const def = getInstallDef(defId);
+    const col = selected ? COLORS.selected : def?.color ?? '#6cb6ff';
+    ctx.strokeStyle = col;
+    ctx.fillStyle = col;
+    ctx.lineWidth = strokeW;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (def?.symbol === 'cable-empty' || draft) {
+      ctx.setLineDash([lw(5), lw(4)]);
+    } else {
+      ctx.setLineDash([]);
+    }
+    if (points.length >= 2) {
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    // vertices
+    const vr = lw(2.4);
+    for (const p of points) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, vr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // length labels mid-segment
+    if (points.length >= 2 && !draft) {
+      ctx.font = `600 ${lw(10)}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1];
+        const b = points[i];
+        const segM = Math.hypot(b.x - a.x, b.y - a.y) / ppm;
+        if (segM < 0.05) continue;
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        const txt =
+          segM >= 10
+            ? `${Math.round(segM)} m`
+            : `${(Math.round(segM * 10) / 10).toFixed(1).replace('.', ',')} m`;
+        ctx.fillStyle = selected ? COLORS.selected : '#9ec5ff';
+        ctx.fillText(txt, mx, my - lw(3));
+      }
+    }
+  };
+
+  if (opts.runs?.length) {
+    for (const run of opts.runs) {
+      paintRun(run.points, run.defId, !!run.selected, false);
+    }
+  }
+
+  if (opts.runDraft && opts.runDraft.points.length) {
+    const pts = [...opts.runDraft.points];
+    if (opts.runDraft.cursor) pts.push(opts.runDraft.cursor);
+    paintRun(pts, opts.runDraft.defId, true, true);
+  }
 }
 
 function drawClosedLoop(

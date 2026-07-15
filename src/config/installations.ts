@@ -16,6 +16,8 @@ export type InstallComponentDef = {
   code: string;
   color: string;
   symbol: ElectraSymbolId;
+  /** point = pin op plan; run = polyline (meters). Default point. */
+  place?: 'point' | 'run';
 };
 
 export const INSTALL_CATEGORIES = [
@@ -182,15 +184,16 @@ export const INSTALL_CATALOG: InstallComponentDef[] = [
     symbol: 'centraal-light',
   },
 
-  // —— Leidingen ——
+  // —— Leidingen (tekenen als lijn → meters) ——
   {
     id: 'el-cable-empty',
     category: 'electric',
     group: 'cables',
     labelNl: 'Loze leiding',
     code: 'LL',
-    color: '#e8eef7',
+    color: '#8ab4f8',
     symbol: 'cable-empty',
+    place: 'run',
   },
   {
     id: 'el-cable-wired',
@@ -198,8 +201,9 @@ export const INSTALL_CATALOG: InstallComponentDef[] = [
     group: 'cables',
     labelNl: 'Bedrade leiding',
     code: 'BL',
-    color: '#e8eef7',
+    color: '#6cb6ff',
     symbol: 'cable-wired',
+    place: 'run',
   },
   {
     id: 'el-cable-earth',
@@ -207,8 +211,19 @@ export const INSTALL_CATALOG: InstallComponentDef[] = [
     group: 'cables',
     labelNl: 'Leiding met aarding',
     code: 'LA',
-    color: '#e8eef7',
+    color: '#3dd68c',
     symbol: 'cable-earth',
+    place: 'run',
+  },
+  {
+    id: 'el-floor-pass',
+    category: 'electric',
+    group: 'cables',
+    labelNl: 'Doorvoer verdieping',
+    code: 'DV',
+    color: '#ffd166',
+    symbol: 'floor-pass',
+    place: 'point',
   },
 
   // —— Standaard (overig) ——
@@ -259,6 +274,11 @@ export function getInstallDef(id: string): InstallComponentDef | undefined {
   return INSTALL_CATALOG.find((c) => c.id === id);
 }
 
+export function isRunTool(defId: string | null | undefined): boolean {
+  if (!defId) return false;
+  return getInstallDef(defId)?.place === 'run';
+}
+
 export function electraPrimary(): InstallComponentDef[] {
   return ELECTRA_PRIMARY_IDS.map((id) => getInstallDef(id)).filter(
     (d): d is InstallComponentDef => !!d,
@@ -283,9 +303,22 @@ export type PlacedInstall = {
   rot?: number;
 };
 
+/** Getekende leiding (polyline), lengte = som segmenten / pxPerMeter. */
+export type InstallRun = {
+  id: string;
+  defId: string;
+  points: { x: number; y: number }[];
+};
+
 let placeSeq = 1;
 export function newPlaceId(): string {
   return `I${placeSeq++}`;
 }
 
+let runSeq = 1;
+export function newRunId(): string {
+  return `R${runSeq++}`;
+}
+
 export const INSTALL_HIT_R = 14;
+export const RUN_HIT_R = 10;

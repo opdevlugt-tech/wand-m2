@@ -29,7 +29,8 @@ export type ElectraSymbolId =
   | 'centraal-light' // centraaldoos met lichtpunt
   | 'cable-empty' // loze leiding
   | 'cable-wired' // bedrade leiding
-  | 'cable-earth'; // leiding met aarding
+  | 'cable-earth' // leiding met aarding
+  | 'floor-pass'; // doorvoer tussen verdiepingen
 
 /** Map naar FIA CAD-paden waar beschikbaar. */
 const FIA_MAP: Partial<Record<ElectraSymbolId, string>> = {
@@ -117,6 +118,9 @@ export function drawElectraSymbol(
         break;
       case 'cable-earth':
         drawCable(ctx, s, 'earth');
+        break;
+      case 'floor-pass':
+        drawFloorPass(ctx, s);
         break;
       default:
         drawSocketC(ctx, s, 1, true);
@@ -368,4 +372,32 @@ function drawCable(
     ctx.lineTo(s * 0.1, s * 0.2);
     ctx.stroke();
   }
+}
+
+/**
+ * Doorvoer verdieping (riser): cirkel + pijl omhoog/omlaag.
+ * Geplaatst op de plek waar leiding door vloer/plafond gaat.
+ */
+function drawFloorPass(ctx: CanvasRenderingContext2D, s: number): void {
+  const r = s * 0.28;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.stroke();
+  // verticale as
+  ctx.beginPath();
+  ctx.moveTo(0, -r * 1.15);
+  ctx.lineTo(0, r * 1.15);
+  ctx.stroke();
+  // pijl omhoog
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.35, -r * 0.55);
+  ctx.lineTo(0, -r * 1.05);
+  ctx.lineTo(r * 0.35, -r * 0.55);
+  ctx.stroke();
+  // pijl omlaag
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.35, r * 0.55);
+  ctx.lineTo(0, r * 1.05);
+  ctx.lineTo(r * 0.35, r * 0.55);
+  ctx.stroke();
 }

@@ -263,6 +263,7 @@ export function bootInstallPanel(
       api.getPxPerMeter(),
       api.getInstallations(),
       meta.id ?? undefined,
+      [],
     );
     upsertPlan(doc);
     api.setActivePlanMeta(doc.id, doc.name);

@@ -1,5 +1,5 @@
 import type { DrawingModel } from '../geometry/types';
-import type { PlacedInstall } from '../config/installations';
+import type { InstallRun, PlacedInstall } from '../config/installations';
 
 export const LIBRARY_KEY = 'wand-m2-library';
 export const AUTOSAVE_KEY = 'wand-m2-autosave';
@@ -12,6 +12,8 @@ export type PlanDocument = {
   pxPerMeter: number;
   model: DrawingModel;
   installations: PlacedInstall[];
+  /** Getekende leidingen (polyline, m) */
+  runs?: InstallRun[];
 };
 
 function uid(): string {
@@ -65,6 +67,7 @@ export function createPlanDoc(
   pxPerMeter: number,
   installations: PlacedInstall[] = [],
   existingId?: string,
+  runs: InstallRun[] = [],
 ): PlanDocument {
   return {
     v: 1,
@@ -74,6 +77,7 @@ export function createPlanDoc(
     pxPerMeter,
     model: JSON.parse(JSON.stringify(model)) as DrawingModel,
     installations: JSON.parse(JSON.stringify(installations)) as PlacedInstall[],
+    runs: JSON.parse(JSON.stringify(runs)) as InstallRun[],
   };
 }
 
@@ -94,6 +98,7 @@ export function parsePlanPayload(data: unknown): PlanDocument | null {
       installations: Array.isArray(d.installations)
         ? (d.installations as PlacedInstall[])
         : [],
+      runs: Array.isArray(d.runs) ? (d.runs as InstallRun[]) : [],
     };
   }
   // Legacy save: { pxPerMeter, model }
@@ -104,6 +109,8 @@ export function parsePlanPayload(data: unknown): PlanDocument | null {
       'Geïmporteerd',
       model,
       typeof d.pxPerMeter === 'number' ? d.pxPerMeter : 50,
+      [],
+      undefined,
       [],
     );
   }

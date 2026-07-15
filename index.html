@@ -120,7 +120,17 @@
             <button type="button" class="btn" disabled>Water</button>
             <button type="button" class="btn" disabled>Afvoer</button>
           </div>
+          <div class="tool-group tool-group-view">
+            <span class="tool-label">Lijn</span>
+            <button type="button" id="run-finish" class="btn btn-primary" disabled title="Leiding afronden (Enter)">✓ Klaar</button>
+            <button type="button" id="run-cancel" class="btn" disabled title="Annuleer leiding (Esc)">Esc</button>
+          </div>
         </div>
+        <details class="bom-panel" id="bom-panel">
+          <summary class="bom-summary">Bestellijst <span id="bom-count" class="bom-count"></span></summary>
+          <ul id="bom-list" class="bom-list"></ul>
+          <p class="bom-empty" id="bom-empty">Nog niets geplaatst of getekend.</p>
+        </details>
       </header>
 
       <main class="stage">
