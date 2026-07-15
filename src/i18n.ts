@@ -133,7 +133,7 @@ export const translations: Record<Lang, Dict> = {
     residual: 'restfout',
     hoverCorner: (n) => `Hover: live vorm met restfout bij hoek ${n}`,
     hint:
-      '✂ Scheiding: rechte/45°/90° (snapt). Deel… = ÷2/3/4. Sleep muren. +Deur handmatig. Tegel 0,3 m.',
+      '1 Teken wanden → sluit lus  ·  2 Muur selecteren → maten/deur  ·  3 Kamer: ✂ Scheiding of Deel…  ·  Opslaan als je klaar bent',
   },
   en: {
     pageTitle: 'Wall-m²',

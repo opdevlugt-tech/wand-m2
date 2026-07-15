@@ -73,10 +73,8 @@ export function boot(root: HTMLElement): void {
   const removePartitionBtn = root.querySelector<HTMLButtonElement>('#remove-partition');
   const roomTypeSelect = root.querySelector<HTMLSelectElement>('#room-type');
   const roomTypeField = root.querySelector<HTMLElement>('#room-type-field');
-  const labelRoomType = root.querySelector<HTMLElement>('#label-room-type');
   const roomNameInput = root.querySelector<HTMLInputElement>('#room-name');
   const roomNameField = root.querySelector<HTMLElement>('#room-name-field');
-  const labelRoomName = root.querySelector<HTMLElement>('#label-room-name');
   const roomNamePresets = root.querySelector<HTMLDataListElement>('#room-name-presets');
   const splitPopup = root.querySelector<HTMLElement>('#split-popup');
   const splitKicker = root.querySelector<HTMLElement>('#split-kicker');
@@ -139,10 +137,8 @@ export function boot(root: HTMLElement): void {
     !removePartitionBtn ||
     !roomTypeSelect ||
     !roomTypeField ||
-    !labelRoomType ||
     !roomNameInput ||
     !roomNameField ||
-    !labelRoomName ||
     !roomNamePresets ||
     !splitPopup ||
     !splitKicker ||
@@ -236,31 +232,35 @@ export function boot(root: HTMLElement): void {
     document.documentElement.lang = lang;
     document.title = tr.pageTitle;
     logo!.textContent = tr.pageTitle;
-    labelWall!.textContent = tr.wallM;
-    labelAngle!.textContent = tr.interiorDeg;
-    labelDoor!.textContent = tr.doorM;
-    labelPpm!.textContent = tr.pxPerM;
-    snapAngleBtn!.textContent = tr.snapBtn;
+    // Compact field captions
+    labelWall!.textContent = 'm';
+    labelAngle!.textContent = '°';
+    labelDoor!.textContent = 'm';
+    labelPpm!.textContent = 'px/m';
+    snapAngleBtn!.textContent = '45°';
     snapAngleBtn!.title = tr.snapTitle;
-    addDoorBtn!.textContent = tr.addDoor;
-    removeDoorBtn!.textContent = tr.removeDoor;
-    doorHingeLBtn!.textContent = tr.doorHingeL;
+    addDoorBtn!.textContent = '+ Deur';
+    removeDoorBtn!.textContent = '×';
+    doorHingeLBtn!.textContent = 'L';
     doorHingeLBtn!.title = 'Scharnier links (L)';
-    doorHingeRBtn!.textContent = tr.doorHingeR;
+    doorHingeRBtn!.textContent = 'R';
     doorHingeRBtn!.title = 'Scharnier rechts (R)';
-    doorSwingBtn!.textContent = tr.doorSwing;
+    doorSwingBtn!.textContent = '↺';
     doorSwingBtn!.title = 'Draairichting omdraaien';
-    splitLoopBtn!.textContent = tr.splitLoop;
+    splitLoopBtn!.textContent = 'Deel…';
+    splitLoopBtn!.title = tr.splitLoop;
     partitionDrawBtn!.textContent =
-      controller.model.status === 'partition' ? 'Esc stop' : '✂ Scheiding';
+      controller.model.status === 'partition' ? 'Esc' : '✂ Scheiding';
     partitionDrawBtn!.title =
-      'Vrije scheidingswand met hoeken: muur → hoeken (45°) → muur. Geen auto-deuren.';
-    undoBtn!.textContent = tr.undo;
+      'Scheidingswand: klik muur → sleep naar andere muur (45°/90°)';
+    removePartitionBtn!.textContent = 'Weg';
+    removePartitionBtn!.title = 'Scheidingswand weg → 1 ruimte';
+    undoBtn!.textContent = '↩';
     undoBtn!.title = 'Laatste handeling ongedaan (Ctrl+Z)';
-    resetBtn!.textContent = tr.reset;
-    if (labelRoomType) labelRoomType.textContent = 'Type';
-    if (labelRoomName) labelRoomName.textContent = 'Ruimte';
-    if (roomNameInput) roomNameInput.placeholder = 'bijv. Slaapkamer';
+    resetBtn!.textContent = 'Reset';
+    saveBtn!.textContent = 'Opslaan';
+    loadBtn!.textContent = 'Laden';
+    if (roomNameInput) roomNameInput.placeholder = 'Naam…';
     popupDragHandle!.title = tr.dragTitle;
     popupKicker!.textContent = tr.meetfoutKicker;
     popupTitle!.textContent = tr.meetfoutTitle;

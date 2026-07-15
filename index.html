@@ -19,16 +19,28 @@
   <body>
     <div id="app">
       <header class="hud">
-        <div class="hud-left">
-          <strong class="logo" id="logo">Wand-m2</strong>
-          <span id="status" class="status"></span>
+        <!-- Rij 1: identiteit + status + bestand -->
+        <div class="hud-row hud-row-main">
+          <div class="hud-brand">
+            <strong class="logo" id="logo">Wand-m²</strong>
+            <span id="status" class="status"></span>
+          </div>
+          <div class="hud-file">
+            <div id="lang-picker" class="lang-picker" role="group" aria-label="Language"></div>
+            <button type="button" id="undo" class="btn" title="Ongedaan (Ctrl+Z)">↩</button>
+            <button type="button" id="save" class="btn btn-primary" title="Opslaan als JSON">Opslaan</button>
+            <button type="button" id="load" class="btn" title="Laden uit JSON">Laden</button>
+            <input id="load-file" type="file" accept="application/json,.json" class="hidden" />
+            <button type="button" id="reset" class="btn btn-danger" title="Alles wissen">Reset</button>
+          </div>
         </div>
-        <div class="hud-right">
-          <div id="lang-picker" class="lang-picker" role="group" aria-label="Language"></div>
 
-          <div class="tool-group" title="Maten">
+        <!-- Rij 2: workflow-tools met labels -->
+        <div class="hud-row hud-row-tools">
+          <div class="tool-group" data-step="1">
+            <span class="tool-label">Muur</span>
             <label class="scale length-field" id="length-field">
-              <span id="label-wall"></span>
+              <span id="label-wall">m</span>
               <input
                 id="wall-length"
                 type="number"
@@ -37,10 +49,11 @@
                 inputmode="decimal"
                 placeholder="—"
                 disabled
+                title="Lengte geselecteerde muur"
               />
             </label>
             <label class="scale angle-field" id="angle-field">
-              <span id="label-angle"></span>
+              <span id="label-angle">°</span>
               <input
                 id="corner-angle"
                 type="number"
@@ -50,15 +63,17 @@
                 inputmode="decimal"
                 placeholder="—"
                 disabled
+                title="Binnenhoek geselecteerde hoek"
               />
             </label>
-            <button type="button" id="snap-angle" class="btn" disabled></button>
+            <button type="button" id="snap-angle" class="btn" disabled title="Hoek naar 45/90/135">45°</button>
           </div>
 
-          <div class="tool-group" title="Deuren">
-            <button type="button" id="add-door" class="btn" disabled></button>
+          <div class="tool-group" data-step="2">
+            <span class="tool-label">Deur</span>
+            <button type="button" id="add-door" class="btn" disabled title="Deur op geselecteerde muur">+ Deur</button>
             <label class="scale door-field" id="door-field">
-              <span id="label-door"></span>
+              <span id="label-door">m</span>
               <input
                 id="door-width"
                 type="number"
@@ -67,59 +82,73 @@
                 inputmode="decimal"
                 placeholder="—"
                 disabled
+                title="Deurbreedte"
               />
             </label>
-            <button type="button" id="remove-door" class="btn btn-danger" disabled></button>
             <button type="button" id="door-hinge-l" class="btn" disabled title="Scharnier links">L</button>
             <button type="button" id="door-hinge-r" class="btn" disabled title="Scharnier rechts">R</button>
-            <button type="button" id="door-swing" class="btn" disabled title="Draairichting omdraaien">↺</button>
+            <button type="button" id="door-swing" class="btn" disabled title="Draairichting">↺</button>
+            <button type="button" id="remove-door" class="btn btn-danger" disabled title="Deur weg">×</button>
           </div>
 
-          <div class="tool-group tool-group-primary" title="Kamers & scheiding">
-            <label class="room-type-field" id="room-type-field">
-              <span id="label-room-type">Type</span>
-              <select id="room-type"></select>
+          <div class="tool-group tool-group-primary" data-step="3">
+            <span class="tool-label">Kamer</span>
+            <label class="room-type-field" id="room-type-field" title="Type / eisen">
+              <select id="room-type" disabled></select>
             </label>
-            <label class="room-name-field" id="room-name-field">
-              <span id="label-room-name">Ruimte</span>
+            <label class="room-name-field" id="room-name-field" title="Ruimtenaam">
               <input
                 id="room-name"
                 type="text"
                 list="room-name-presets"
-                placeholder="bijv. Slaapkamer"
+                placeholder="Naam…"
                 disabled
                 autocomplete="off"
               />
               <datalist id="room-name-presets"></datalist>
             </label>
-            <button type="button" id="partition-draw" class="btn btn-primary" disabled title="Vrije scheidingswand: muur → hoeken → muur">
+            <button
+              type="button"
+              id="partition-draw"
+              class="btn btn-primary"
+              disabled
+              title="Scheidingswand: klik muur → sleep naar andere muur"
+            >
               ✂ Scheiding
             </button>
-            <button type="button" id="remove-partition" class="btn btn-danger" disabled title="Scheidingswand weg → 1 ruimte">
-              Scheiding weg
+            <button
+              type="button"
+              id="split-loop"
+              class="btn"
+              disabled
+              title="Gelijke banen ÷2 / ÷3 / ÷4"
+            >
+              Deel…
             </button>
-            <button type="button" id="split-loop" class="btn" disabled title="Gelijke banen ÷2/÷3/÷4"></button>
+            <button
+              type="button"
+              id="remove-partition"
+              class="btn btn-danger"
+              disabled
+              title="Scheidingswand weg → 1 ruimte"
+            >
+              Weg
+            </button>
           </div>
 
-          <div class="tool-group" title="Weergave">
-            <button type="button" id="zoom-out" class="btn" title="Zoom uit">−</button>
-            <button type="button" id="zoom-reset" class="btn" title="Passend / 100%">Fit</button>
-            <button type="button" id="zoom-in" class="btn" title="Zoom in">+</button>
-            <label class="scale">
-              <span id="label-ppm"></span>
+          <div class="tool-group tool-group-view" data-step="z">
+            <span class="tool-label">Zoom</span>
+            <button type="button" id="zoom-out" class="btn" title="Uit">−</button>
+            <button type="button" id="zoom-reset" class="btn" title="Passend">Fit</button>
+            <button type="button" id="zoom-in" class="btn" title="In">+</button>
+            <label class="scale scale-ppm" title="Pixels per meter">
+              <span id="label-ppm">px/m</span>
               <input id="px-per-m" type="number" min="5" max="2000" step="1" value="50" inputmode="numeric" />
             </label>
           </div>
-
-          <div class="tool-group">
-            <button type="button" id="undo" class="btn"></button>
-            <button type="button" id="save" class="btn btn-primary" title="Plan opslaan als JSON">Opslaan</button>
-            <button type="button" id="load" class="btn" title="Plan laden uit JSON">Laden</button>
-            <input id="load-file" type="file" accept="application/json,.json" class="hidden" />
-            <button type="button" id="reset" class="btn btn-danger"></button>
-          </div>
         </div>
       </header>
+
       <main class="stage">
         <canvas id="canvas"></canvas>
         <div id="area-badge" class="area-badge hidden" aria-live="polite"></div>
