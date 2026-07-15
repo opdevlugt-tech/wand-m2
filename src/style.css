@@ -1009,6 +1009,14 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+.symbol-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.65rem;
+  align-items: flex-end;
+  width: 100%;
+  margin-top: 0.25rem;
+}
 .symbol-select {
   background: #1a2330;
   border: 1px solid #2a3848;
