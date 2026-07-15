@@ -527,7 +527,7 @@ function drawTinyTag(
   ctx.fillText(text, x, y);
 }
 
-/** Clear m² + name in the middle of a room. */
+/** Clear m² + name in the middle of a room (compact). */
 function drawRoomAreaBadge(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -537,33 +537,32 @@ function drawRoomAreaBadge(
   ok: boolean,
   warn: string | null,
 ): void {
-  const nameFont = `600 ${lw(10)}px system-ui, sans-serif`;
-  const areaFont = `700 ${lw(14)}px system-ui, sans-serif`;
+  const nameFont = `500 ${lw(8)}px system-ui, sans-serif`;
+  const areaFont = `600 ${lw(10)}px system-ui, sans-serif`;
   ctx.font = nameFont;
   const nameW = ctx.measureText(name).width;
   ctx.font = areaFont;
   const areaW = ctx.measureText(areaText).width;
-  const warnFont = `600 ${lw(9)}px system-ui, sans-serif`;
+  const warnFont = `500 ${lw(8)}px system-ui, sans-serif`;
   let warnW = 0;
   if (warn) {
     ctx.font = warnFont;
     warnW = ctx.measureText(warn).width;
   }
   const contentW = Math.max(nameW, areaW, warnW);
-  const padX = lw(10);
-  const padY = lw(6);
-  const lineH = lw(14);
+  const padX = lw(6);
+  const padY = lw(4);
+  const lineH = lw(11);
   const lines = warn ? 3 : 2;
   const boxW = contentW + padX * 2;
   const boxH = lineH * lines + padY * 2;
   const left = x - boxW / 2;
   const top = y - boxH / 2;
 
-  ctx.fillStyle = ok ? 'rgba(15, 20, 25, 0.88)' : 'rgba(40, 16, 16, 0.9)';
-  ctx.strokeStyle = ok ? 'rgba(61, 214, 140, 0.55)' : 'rgba(255, 107, 107, 0.7)';
-  ctx.lineWidth = lw(1.2);
-  // simple rounded rect
-  const r = lw(6);
+  ctx.fillStyle = ok ? 'rgba(15, 20, 25, 0.82)' : 'rgba(40, 16, 16, 0.88)';
+  ctx.strokeStyle = ok ? 'rgba(61, 214, 140, 0.4)' : 'rgba(255, 107, 107, 0.55)';
+  ctx.lineWidth = lw(1);
+  const r = lw(4);
   ctx.beginPath();
   ctx.moveTo(left + r, top);
   ctx.arcTo(left + boxW, top, left + boxW, top + boxH, r);
@@ -578,7 +577,7 @@ function drawRoomAreaBadge(
   ctx.textBaseline = 'middle';
   let yy = top + padY + lineH / 2;
   ctx.font = nameFont;
-  ctx.fillStyle = '#c5d0de';
+  ctx.fillStyle = '#a8b4c4';
   ctx.fillText(name, x, yy);
   yy += lineH;
   ctx.font = areaFont;
