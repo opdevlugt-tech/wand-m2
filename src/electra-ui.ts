@@ -129,8 +129,8 @@ export function bootElectraPalette(
     btn.title = label;
     btn.setAttribute('aria-label', label);
     const c = document.createElement('canvas');
-    c.width = 44;
-    c.height = 44;
+    c.width = 32;
+    c.height = 32;
     c.className = 'symbol-canvas';
     btn.appendChild(c);
     const lab = document.createElement('span');
@@ -139,8 +139,8 @@ export function bootElectraPalette(
     btn.appendChild(lab);
     const ctx = c.getContext('2d');
     if (ctx) {
-      ctx.clearRect(0, 0, 44, 44);
-      drawElectraSymbol(ctx, symbol, 22, 20, 28, { viewScale: 1 });
+      ctx.clearRect(0, 0, 32, 32);
+      drawElectraSymbol(ctx, symbol, 16, 15, 22, { viewScale: 1 });
     }
     btn.addEventListener('click', () => selectTool(id));
     return btn;
