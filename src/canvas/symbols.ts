@@ -203,11 +203,17 @@ function drawDimmer(ctx: CanvasRenderingContext2D, s: number): void {
  * Wandcontactdoos (NL installatieplattegrond).
  * Bron: elektraklus WCD-enkel-randaarde.png / WCD-dubbel-randaarde.png
  *
- *   zonder aarding:  │ + ∩   (steel + boog opening omlaag)
- *   met randaarde:   │ + ─ + ∩  (extra horizontale balk)
- *   meervoudig: meerdere ∩ onder elkaar
+ *   zonder aarding:  │ + ∩   (steel + boog met piek op diameter-lijn)
+ *   met randaarde:   │ + ─ + ∩  (balk = raaklijn/piek van 1e boog)
+ *   meervoudig: één steel/balk, ∩-bogen gestapeld (poten omlaag)
  *
- * Canvas y↓: ∩ = arc van π→0 met de klok mee (door de BOVENKANT).
+ * Geometrie (canvas y↓):
+ *   - Steel alleen BOVEN de balk
+ *   - Middelpunt van boog i ONDER de piek: cy = yPeak + r
+ *   - Bovenste halfcirkel t.o.v. dat middelpunt = ∩ onder de balk
+ *   - arc(π → 0, counterclockwise=false) = met de klok mee door NOORDEN
+ *
+ * Fout-modus die we eerder hadden: cy op de balk → boog ging DOOR de steel.
  */
 function drawSocketC(
   ctx: CanvasRenderingContext2D,
@@ -215,31 +221,36 @@ function drawSocketC(
   count: 1 | 2 | 4,
   pe: boolean,
 ): void {
-  const r = s * 0.32;
-  const stemH = s * 0.42;
-  // top of first arc (where stem meets bar/arc)
-  const y0 = 0;
+  const r = s * 0.34;
+  const stemH = s * 0.36;
+  const gap = r * 0.22;
+  // elke ∩ is r diep (piek → poten); gaps tussen poten en volgende piek
+  const arcsH = count * r + Math.max(0, count - 1) * gap;
+  const totalH = stemH + arcsH;
+  const yTop = -totalH / 2;
+  const yBar = yTop + stemH;
 
-  // verticale steel omhoog vanaf boogtop
+  // verticale steel: alleen BOVEN de balk
   ctx.beginPath();
-  ctx.moveTo(0, y0 - stemH);
-  ctx.lineTo(0, y0);
+  ctx.moveTo(0, yTop);
+  ctx.lineTo(0, yBar);
   ctx.stroke();
 
   if (pe) {
-    // randaarde = horizontale balk door top van de boog
-    const barW = r * 1.15;
+    // randaarde = horizontale balk door de piek van de eerste boog
+    const barW = r * 1.05; // ≈ diameter, zoals elektraklus-ref
     ctx.beginPath();
-    ctx.moveTo(-barW, y0);
-    ctx.lineTo(barW, y0);
+    ctx.moveTo(-barW, yBar);
+    ctx.lineTo(barW, yBar);
     ctx.stroke();
   }
 
-  // ∩ halfcirkels (opening naar BENEDEN) — zoals de referentie-PNG
+  // ∩-bogen: piek raakt yPeak, poten omlaag
   for (let i = 0; i < count; i++) {
-    const cy = y0 + i * (r * 1.2);
+    const yPeak = yBar + i * (r + gap);
+    const cy = yPeak + r; // middelpunt onder de piek
     ctx.beginPath();
-    // π (links) → 0 (rechts) clockwise = door bovenkant = ∩
+    // π (links) → 0 (rechts), met de klok mee door bovenkant = ∩
     ctx.arc(0, cy, r, Math.PI, 0, false);
     ctx.stroke();
   }
@@ -256,17 +267,19 @@ function drawCombo(ctx: CanvasRenderingContext2D, s: number): void {
   ctx.moveTo(r * 0.4, -r * 2.5);
   ctx.lineTo(r * 1.6, -r * 3.4);
   ctx.stroke();
-  // WCD randaarde eronder
+  // WCD randaarde eronder — zelfde ∩-geometrie als drawSocketC
+  const yBar = r * 0.1;
+  const rr = r * 1.35;
   ctx.beginPath();
   ctx.moveTo(0, -r * 1.1);
-  ctx.lineTo(0, r * 0.1);
+  ctx.lineTo(0, yBar);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(-r * 1.5, r * 0.1);
-  ctx.lineTo(r * 1.5, r * 0.1);
+  ctx.moveTo(-r * 1.5, yBar);
+  ctx.lineTo(r * 1.5, yBar);
   ctx.stroke();
   ctx.beginPath();
-  ctx.arc(0, r * 0.15, r * 1.35, Math.PI, 0, false);
+  ctx.arc(0, yBar + rr, rr, Math.PI, 0, false);
   ctx.stroke();
 }
 
