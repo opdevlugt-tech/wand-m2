@@ -109,10 +109,11 @@ export function boot(root: HTMLElement): void {
   const undoBtn = root.querySelector<HTMLButtonElement>('#undo');
   const saveBtn = root.querySelector<HTMLButtonElement>('#save');
   const exportPngBtn = root.querySelector<HTMLButtonElement>('#export-png');
+    // 3D-knop zit in HUD (#app); overlay hangt op <body> (buiten root)
     const view3dBtn = root.querySelector<HTMLButtonElement>('#view-3d');
-    const view3dOverlay = root.querySelector<HTMLElement>('#view3d-overlay');
-    const view3dCanvas = root.querySelector<HTMLCanvasElement>('#view3d-canvas');
-    const view3dClose = root.querySelector<HTMLButtonElement>('#view3d-close');
+    const view3dOverlay = document.querySelector<HTMLElement>('#view3d-overlay');
+    const view3dCanvas = document.querySelector<HTMLCanvasElement>('#view3d-canvas');
+    const view3dClose = document.querySelector<HTMLButtonElement>('#view3d-close');
     const loadBtn = root.querySelector<HTMLButtonElement>('#load');
   const loadFile = root.querySelector<HTMLInputElement>('#load-file');
   const resetBtn = root.querySelector<HTMLButtonElement>('#reset');
