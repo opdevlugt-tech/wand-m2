@@ -35,7 +35,7 @@ import {
   wallSegments,
   wouldIntersect,
   findPartnerWall,
-  translateWallBy,
+  translateWallClamped,
   projectOntoNormal,
   mergePolygonsAtSharedWall,
   type SharedWallRef,
@@ -1136,7 +1136,35 @@ export class DrawingController {
     const { dx, dy } = projectOntoNormal(rawDx, rawDy, seg.a, seg.b);
     if (Math.hypot(dx, dy) < 0.2) return;
 
-    const nextVerts = translateWallBy(loop.vertices, wallIndex, dx, dy);
+    // Other rooms' walls = obstacles (cannot pass through)
+    const obstacles = this.model.loops.flatMap((L, i) => {
+      if (i === loopIndex) return [];
+      if (partner && i === partner.partnerLoopIndex) {
+        // partner's non-shared walls still block? Shared moves together.
+        // Block only walls of rooms that are not the partner of this partition.
+        return [];
+      }
+      return wallSegments(L.vertices, true);
+    });
+    // Also walls of partner except the shared wall itself
+    if (partner) {
+      const pLoop = this.model.loops[partner.partnerLoopIndex];
+      if (pLoop) {
+        const pSegs = wallSegments(pLoop.vertices, true);
+        pSegs.forEach((s, wi) => {
+          if (wi !== partner.partnerWallIndex) obstacles.push(s);
+        });
+      }
+    }
+
+    const nextVerts = translateWallClamped(
+      loop.vertices,
+      wallIndex,
+      dx,
+      dy,
+      obstacles,
+      16,
+    );
     if (!nextVerts) {
       this.cfg.onReject();
       return;
@@ -1149,13 +1177,17 @@ export class DrawingController {
     if (partner) {
       const pLoop = loops[partner.partnerLoopIndex];
       if (pLoop) {
-        const pNext = translateWallBy(
+        const pNext = translateWallClamped(
           pLoop.vertices,
           partner.partnerWallIndex,
           dx,
           dy,
+          // primary loop walls except shared
+          wallSegments(nextVerts, true).filter((_, wi) => wi !== wallIndex),
+          16,
         );
         if (!pNext) {
+          // primary moved but partner blocked — reject both
           this.cfg.onReject();
           return;
         }

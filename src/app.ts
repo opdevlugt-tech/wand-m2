@@ -24,6 +24,7 @@ import {
   zoomAt,
 } from './geometry/view';
 import { ROOM_CONFIG, ROOM_NAME_PRESETS_NL, getRoomType, roomDisplayName } from './config/rooms';
+import { findPartnerWall } from './geometry/math';
 
 const HIT = 16;
 const CLOSE = 22;
@@ -69,6 +70,7 @@ export function boot(root: HTMLElement): void {
   const labelDoor = root.querySelector<HTMLElement>('#label-door');
   const splitLoopBtn = root.querySelector<HTMLButtonElement>('#split-loop');
   const partitionDrawBtn = root.querySelector<HTMLButtonElement>('#partition-draw');
+  const removePartitionBtn = root.querySelector<HTMLButtonElement>('#remove-partition');
   const roomTypeSelect = root.querySelector<HTMLSelectElement>('#room-type');
   const roomTypeField = root.querySelector<HTMLElement>('#room-type-field');
   const labelRoomType = root.querySelector<HTMLElement>('#label-room-type');
@@ -131,6 +133,7 @@ export function boot(root: HTMLElement): void {
     !labelDoor ||
     !splitLoopBtn ||
     !partitionDrawBtn ||
+    !removePartitionBtn ||
     !roomTypeSelect ||
     !roomTypeField ||
     !labelRoomType ||
@@ -675,6 +678,20 @@ export function boot(root: HTMLElement): void {
     splitLoopBtn!.disabled = li === null || (controller.model.loops[li]?.vertices.length ?? 0) < 3;
     partitionDrawBtn!.disabled =
       li === null || (controller.model.loops[li]?.vertices.length ?? 0) < 3;
+    // Scheiding weg when selected wall is shared between two rooms
+    let canRemovePartition = false;
+    if (
+      controller.selection.kind === 'wall' &&
+      controller.selection.loopIndex !== null
+    ) {
+      const partner = findPartnerWall(
+        controller.model.loops,
+        controller.selection.loopIndex,
+        controller.selection.wallIndex,
+      );
+      canRemovePartition = partner !== null;
+    }
+    removePartitionBtn!.disabled = !canRemovePartition;
     const hasRoom = li !== null;
     roomTypeSelect!.disabled = !hasRoom;
     roomNameInput!.disabled = !hasRoom;
@@ -1156,6 +1173,25 @@ export function boot(root: HTMLElement): void {
     }
     if (!controller.beginPartitionDraw()) return;
     statusEl!.textContent = tr.statusPartitionDraw;
+    paint();
+  });
+  removePartitionBtn.addEventListener('click', () => {
+    if (
+      controller.selection.kind !== 'wall' ||
+      controller.selection.loopIndex === null
+    ) {
+      return;
+    }
+    if (
+      !controller.deleteSharedWall(
+        controller.selection.loopIndex,
+        controller.selection.wallIndex,
+      )
+    ) {
+      return;
+    }
+    syncDoorFieldFromSelection();
+    updateHud(controller.model);
     paint();
   });
   roomTypeSelect.addEventListener('change', () => {

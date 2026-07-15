@@ -1408,6 +1408,146 @@ export function translateWallBy(
   return next;
 }
 
+/** True if open segments cross (not mere shared endpoints). */
+export function segmentsCrossProper(
+  a: Point,
+  b: Point,
+  c: Point,
+  d: Point,
+  eps = 1.5,
+): boolean {
+  if (!segmentsIntersect({ a, b }, { a: c, b: d })) return false;
+  // Shared endpoint only → not a proper crossing
+  if (dist(a, c) < eps || dist(a, d) < eps || dist(b, c) < eps || dist(b, d) < eps) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Would moving wall wallIndex by (dx,dy) cross other walls of this polygon
+ * or any extra obstacle segments?
+ */
+export function wallMoveCrosses(
+  vertices: Point[],
+  wallIndex: number,
+  dx: number,
+  dy: number,
+  obstacles: Segment[] = [],
+): boolean {
+  const n = vertices.length;
+  const i0 = wallIndex;
+  const i1 = (wallIndex + 1) % n;
+  const a = { x: vertices[i0].x + dx, y: vertices[i0].y + dy };
+  const b = { x: vertices[i1].x + dx, y: vertices[i1].y + dy };
+  // Adjacent walls pivot around i0/i1 — check against non-adjacent edges
+  for (let i = 0; i < n; i++) {
+    if (i === wallIndex) continue;
+    // skip edges that share endpoint with moved wall
+    if (i === (wallIndex - 1 + n) % n) continue;
+    if (i === (wallIndex + 1) % n) continue;
+    const c = vertices[i];
+    const d = vertices[(i + 1) % n];
+    if (segmentsCrossProper(a, b, c, d)) return true;
+  }
+  // Check edges that share i0: (i0-1) -> new i0
+  const iPrev = (i0 - 1 + n) % n;
+  const prev = vertices[iPrev];
+  const newI0 = a;
+  for (let i = 0; i < n; i++) {
+    if (i === iPrev || i === wallIndex) continue;
+    if (i === (iPrev - 1 + n) % n) continue;
+    const c = vertices[i];
+    const d = vertices[(i + 1) % n];
+    // skip if shares newI0 or prev as endpoint only
+    if (segmentsCrossProper(prev, newI0, c, d)) return true;
+  }
+  // edge new i1 -> (i1+1)
+  const iNext = (i1 + 1) % n;
+  const nextV = vertices[iNext];
+  const newI1 = b;
+  for (let i = 0; i < n; i++) {
+    if (i === wallIndex || i === i1) continue;
+    if (i === (i1 + 1) % n) continue;
+    const c = vertices[i];
+    const d = vertices[(i + 1) % n];
+    if (segmentsCrossProper(newI1, nextV, c, d)) return true;
+  }
+
+  for (const o of obstacles) {
+    if (segmentsCrossProper(a, b, o.a, o.b)) return true;
+    if (segmentsCrossProper(prev, newI0, o.a, o.b)) return true;
+    if (segmentsCrossProper(newI1, nextV, o.a, o.b)) return true;
+  }
+  return false;
+}
+
+/**
+ * Binary-search max scale of (dx,dy) that keeps polygon valid and not crossing.
+ * Also snaps moved endpoints to nearby corners (creates clean corner alignment).
+ */
+export function translateWallClamped(
+  vertices: Point[],
+  wallIndex: number,
+  dx: number,
+  dy: number,
+  obstacles: Segment[] = [],
+  cornerSnapPx = 14,
+): Point[] | null {
+  if (Math.hypot(dx, dy) < 1e-6) return vertices.map((p) => ({ ...p }));
+
+  // Binary search scale in [0,1]
+  let lo = 0;
+  let hi = 1;
+  let best: Point[] | null = null;
+  for (let iter = 0; iter < 14; iter++) {
+    const mid = (lo + hi) / 2;
+    const tdx = dx * mid;
+    const tdy = dy * mid;
+    if (wallMoveCrosses(vertices, wallIndex, tdx, tdy, obstacles)) {
+      hi = mid;
+      continue;
+    }
+    const cand = translateWallBy(vertices, wallIndex, tdx, tdy);
+    if (!cand) {
+      hi = mid;
+      continue;
+    }
+    best = cand;
+    lo = mid;
+  }
+  if (!best) return null;
+
+  // Snap moved endpoints to nearby non-adjacent corners → “break” at corner
+  const n = best.length;
+  const i0 = wallIndex;
+  const i1 = (wallIndex + 1) % n;
+  const snapEnd = (idx: number): void => {
+    const p = best![idx];
+    let nearest: Point | null = null;
+    let bestD = cornerSnapPx;
+    for (let i = 0; i < n; i++) {
+      if (i === i0 || i === i1) continue;
+      const d = dist(p, best![i]);
+      if (d < bestD) {
+        bestD = d;
+        nearest = best![i];
+      }
+    }
+    if (nearest) {
+      best![idx] = { ...nearest };
+    }
+  };
+  snapEnd(i0);
+  snapEnd(i1);
+  if (polygonSelfIntersects(best, true)) {
+    // snap made it bad — return pre-snap best without snap
+    const mid = lo;
+    return translateWallBy(vertices, wallIndex, dx * mid, dy * mid);
+  }
+  return best;
+}
+
 /** Unit normal of wall (left of a→b). */
 export function wallNormal(a: Point, b: Point): Point {
   const L = dist(a, b) || 1;
