@@ -1,10 +1,10 @@
 /**
- * Kamerregels — pas hier aan zonder de rest van de app te doorzoeken.
+ * Kamerregels & labels — pas hier aan zonder de rest van de app te doorzoeken.
  * Eenheden: m² (binnenmaat), m (deur).
  */
 export type RoomTypeDef = {
   id: string;
-  /** Korte code in UI */
+  /** Korte code in UI / badge */
   code: string;
   labelNl: string;
   labelEn: string;
@@ -14,43 +14,108 @@ export type RoomTypeDef = {
   requireDoor: boolean;
 };
 
+/** Snelkeuze ruimte-ID’s (ook als vrije tekst te overschrijven). */
+export const ROOM_NAME_PRESETS_NL = [
+  'Slaapkamer',
+  'Slaapkamer 1p',
+  'Slaapkamer 2p',
+  'Gang',
+  'Badkamer',
+  'Toilet',
+  'Woonkamer',
+  'Keuken',
+  'Berging',
+  'Kantoor',
+  'Techniek',
+  'Entree',
+  'Balkon',
+  'Overig',
+] as const;
+
 export const ROOM_CONFIG = {
-  /** Standaard deurbreedte bij nieuwe deuren / splits */
   defaultDoorWidthM: 0.9,
-
-  /**
-   * Tegelraster: standaard 0,3 × 0,3 m.
-   * minor = tegelmaat; major elke N tegels (default 1 m bij 0,3 → elke ~3,33 → we round to 1m).
-   */
   tileSizeM: 0.3,
-  /** Major grid every N meters (1 m = dikkere lijn) */
   majorGridM: 1,
-
-  /** Min. aantal deuren per kamer als requireDoor true */
   minDoorsPerRoom: 1,
 
   types: [
     {
-      id: 'single',
+      id: 'bedroom1',
       code: '1p',
-      labelNl: '1-persoons',
-      labelEn: 'Single',
+      labelNl: 'Slaapkamer 1p',
+      labelEn: 'Bedroom 1p',
       minAreaM2: 3.5,
       requireDoor: true,
     },
     {
-      id: 'double',
+      id: 'bedroom2',
       code: '2p',
-      labelNl: '2-persoons',
-      labelEn: 'Double',
+      labelNl: 'Slaapkamer 2p',
+      labelEn: 'Bedroom 2p',
       minAreaM2: 7,
+      requireDoor: true,
+    },
+    {
+      id: 'hall',
+      code: 'GANG',
+      labelNl: 'Gang',
+      labelEn: 'Hall',
+      minAreaM2: 0,
+      requireDoor: false,
+    },
+    {
+      id: 'bath',
+      code: 'BAD',
+      labelNl: 'Badkamer',
+      labelEn: 'Bathroom',
+      minAreaM2: 0,
+      requireDoor: true,
+    },
+    {
+      id: 'toilet',
+      code: 'WC',
+      labelNl: 'Toilet',
+      labelEn: 'Toilet',
+      minAreaM2: 0,
+      requireDoor: true,
+    },
+    {
+      id: 'living',
+      code: 'WOON',
+      labelNl: 'Woonkamer',
+      labelEn: 'Living',
+      minAreaM2: 0,
+      requireDoor: false,
+    },
+    {
+      id: 'kitchen',
+      code: 'KEU',
+      labelNl: 'Keuken',
+      labelEn: 'Kitchen',
+      minAreaM2: 0,
+      requireDoor: false,
+    },
+    {
+      id: 'storage',
+      code: 'BERG',
+      labelNl: 'Berging',
+      labelEn: 'Storage',
+      minAreaM2: 0,
+      requireDoor: false,
+    },
+    {
+      id: 'office',
+      code: 'KANT',
+      labelNl: 'Kantoor',
+      labelEn: 'Office',
+      minAreaM2: 0,
       requireDoor: true,
     },
     {
       id: 'other',
       code: '—',
-      labelNl: 'Overig / gang',
-      labelEn: 'Other / hall',
+      labelNl: 'Overig',
+      labelEn: 'Other',
       minAreaM2: 0,
       requireDoor: false,
     },
@@ -62,4 +127,16 @@ export const ROOM_CONFIG = {
 export function getRoomType(id: string | null | undefined): RoomTypeDef {
   const found = ROOM_CONFIG.types.find((t) => t.id === id);
   return found ?? ROOM_CONFIG.types.find((t) => t.id === ROOM_CONFIG.defaultTypeId)!;
+}
+
+/** Display name: free text wins, else type label. */
+export function roomDisplayName(
+  name: string | null | undefined,
+  roomTypeId: string | null | undefined,
+  lang: 'nl' | 'en' = 'nl',
+): string {
+  const trimmed = (name ?? '').trim();
+  if (trimmed) return trimmed;
+  const t = getRoomType(roomTypeId);
+  return lang === 'en' ? t.labelEn : t.labelNl;
 }

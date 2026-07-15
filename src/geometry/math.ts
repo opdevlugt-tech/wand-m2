@@ -1425,3 +1425,57 @@ export function projectOntoNormal(
   const s = dx * n.x + dy * n.y;
   return { dx: n.x * s, dy: n.y * s };
 }
+
+/**
+ * Merge two polygons that share a wall edge into one outer ring.
+ * wall indices are the shared edge in each polygon.
+ */
+export function mergePolygonsAtSharedWall(
+  A: Point[],
+  wallA: number,
+  B: Point[],
+  wallB: number,
+): Point[] | null {
+  const nA = A.length;
+  const nB = B.length;
+  if (nA < 3 || nB < 3) return null;
+  const a0 = A[wallA];
+  const a1 = A[(wallA + 1) % nA];
+  const b0 = B[wallB];
+  const b1 = B[(wallB + 1) % nB];
+  const eps = 8;
+  const same = dist(a0, b0) < eps && dist(a1, b1) < eps;
+  const rev = dist(a0, b1) < eps && dist(a1, b0) < eps;
+  if (!same && !rev) return null;
+
+  const out: Point[] = [];
+  // Walk A from a1 around to a0 (exclude shared edge)
+  let i = (wallA + 1) % nA;
+  for (let k = 0; k < nA - 1; k++) {
+    out.push({ ...A[i] });
+    i = (i + 1) % nA;
+  }
+  // Walk B interior (exclude shared)
+  let j = (wallB + 1) % nB;
+  for (let k = 0; k < nB - 1; k++) {
+    out.push({ ...B[j] });
+    j = (j + 1) % nB;
+  }
+
+  // Drop near-duplicate consecutive points
+  const cleaned: Point[] = [];
+  for (const p of out) {
+    if (!cleaned.length || dist(cleaned[cleaned.length - 1], p) > 1.5) {
+      cleaned.push(p);
+    }
+  }
+  if (
+    cleaned.length >= 2 &&
+    dist(cleaned[0], cleaned[cleaned.length - 1]) < 1.5
+  ) {
+    cleaned.pop();
+  }
+  if (cleaned.length < 3) return null;
+  if (polygonSelfIntersects(cleaned, true)) return null;
+  return cleaned;
+}

@@ -193,11 +193,35 @@ body {
   border-radius: 8px;
   padding: 0.25rem 0.4rem;
   font: inherit;
+  max-width: 9.5rem;
 }
 .room-type-field.active {
   color: #6cb6ff;
 }
 .room-type-field.active select {
+  border-color: #6cb6ff;
+}
+
+.room-name-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: #8b9bb0;
+}
+.room-name-field input {
+  width: 8.5rem;
+  background: #1a2330;
+  border: 1px solid #2a3848;
+  color: #e7eef7;
+  border-radius: 8px;
+  padding: 0.25rem 0.4rem;
+  font: inherit;
+}
+.room-name-field.active {
+  color: #9ad4ff;
+}
+.room-name-field.active input {
   border-color: #6cb6ff;
 }
 

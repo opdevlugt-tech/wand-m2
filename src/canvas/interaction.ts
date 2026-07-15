@@ -37,6 +37,7 @@ import {
   findPartnerWall,
   translateWallBy,
   projectOntoNormal,
+  mergePolygonsAtSharedWall,
   type SharedWallRef,
 } from '../geometry/math';
 import { ROOM_CONFIG } from '../config/rooms';
@@ -92,11 +93,39 @@ export class DrawingController {
     last: Point;
   } | null = null;
 
+  /** Snapshots for Undo = last real action */
+  private history: Array<{
+    model: DrawingModel;
+    selection: Selection;
+    meetfoutLoopIndex: number | null;
+  }> = [];
+  private readonly maxHistory = 60;
+  private historyLocked = false;
+
   constructor(
     private canvas: HTMLCanvasElement,
     private cfg: InteractionConfig,
   ) {
     this.bind();
+  }
+
+  private cloneModel(m: DrawingModel): DrawingModel {
+    return JSON.parse(JSON.stringify(m)) as DrawingModel;
+  }
+
+  private cloneSelection(s: Selection): Selection {
+    return JSON.parse(JSON.stringify(s)) as Selection;
+  }
+
+  /** Call before a user-facing mutation (not every drag-frame). */
+  private pushHistory(): void {
+    if (this.historyLocked) return;
+    this.history.push({
+      model: this.cloneModel(this.model),
+      selection: this.cloneSelection(this.selection),
+      meetfoutLoopIndex: this.meetfoutLoopIndex,
+    });
+    if (this.history.length > this.maxHistory) this.history.shift();
   }
 
   private bind(): void {
@@ -195,7 +224,12 @@ export class DrawingController {
     return { vertices: loop.vertices, closed: true };
   }
 
-  private writeVerts(vertices: Point[], loopIndex: number | null): void {
+  private writeVerts(
+    vertices: Point[],
+    loopIndex: number | null,
+    recordHistory = false,
+  ): void {
+    if (recordHistory) this.pushHistory();
     if (loopIndex === null) {
       this.model = { ...this.model, vertices, draftEnd: null };
     } else {
@@ -206,7 +240,12 @@ export class DrawingController {
     }
   }
 
-  private writeLoop(loopIndex: number, patch: Partial<Loop>): void {
+  private writeLoop(
+    loopIndex: number,
+    patch: Partial<Loop>,
+    recordHistory = false,
+  ): void {
+    if (recordHistory) this.pushHistory();
     const loops = this.model.loops.map((L, i) =>
       i === loopIndex ? { ...L, ...patch } : L,
     );
@@ -230,7 +269,7 @@ export class DrawingController {
       this.cfg.onReject();
       return false;
     }
-    this.writeVerts(next, li);
+    this.writeVerts(next, li, true);
     this.setSelection({ kind: 'vertex', loopIndex: li, vertexIndex: absorbIndex }, false, false);
     this.cfg.onChange();
     return true;
@@ -272,7 +311,7 @@ export class DrawingController {
       this.cfg.onReject();
       return false;
     }
-    this.writeVerts(next, this.selection.loopIndex);
+    this.writeVerts(next, this.selection.loopIndex, true);
     this.cfg.onChange();
     this.emitSelection(false, false);
     return true;
@@ -288,7 +327,7 @@ export class DrawingController {
       this.cfg.onReject();
       return false;
     }
-    this.writeVerts(next, this.selection.loopIndex);
+    this.writeVerts(next, this.selection.loopIndex, true);
     this.cfg.onChange();
     this.emitSelection(false, false);
     return true;
@@ -310,7 +349,7 @@ export class DrawingController {
       this.cfg.onReject();
       return false;
     }
-    this.writeVerts(next, this.selection.loopIndex);
+    this.writeVerts(next, this.selection.loopIndex, true);
     this.cfg.onChange();
     this.emitSelection(false, false);
     return true;
@@ -345,7 +384,7 @@ export class DrawingController {
       swing: 1,
     };
     const doors = [...(loop.doors ?? []), door];
-    this.writeLoop(li, { doors });
+    this.writeLoop(li, { doors }, true);
     this.setSelection({ kind: 'door', loopIndex: li, doorId: door.id }, false, false, true);
     this.cfg.onChange();
     return true;
@@ -371,7 +410,7 @@ export class DrawingController {
     const doors = loop.doors.map((x) =>
       x.id === d.id ? { ...x, widthM: meters } : x,
     );
-    this.writeLoop(li, { doors });
+    this.writeLoop(li, { doors }, true);
     this.cfg.onChange();
     this.emitSelection(false, false, false);
     return true;
@@ -384,7 +423,7 @@ export class DrawingController {
     const doorId = sel.doorId;
     const loop = this.model.loops[li];
     if (!loop) return false;
-    this.writeLoop(li, { doors: loop.doors.filter((d) => d.id !== doorId) });
+    this.writeLoop(li, { doors: loop.doors.filter((d) => d.id !== doorId) }, true);
     this.setSelection({ kind: 'none' });
     this.cfg.onChange();
     return true;
@@ -403,7 +442,16 @@ export class DrawingController {
   setSelectedRoomType(typeId: string): boolean {
     const li = this.selectedLoopIndex();
     if (li === null) return false;
-    this.writeLoop(li, { roomTypeId: typeId });
+    this.writeLoop(li, { roomTypeId: typeId }, true);
+    this.cfg.onChange();
+    return true;
+  }
+
+  setSelectedRoomName(name: string | null): boolean {
+    const li = this.selectedLoopIndex();
+    if (li === null) return false;
+    const trimmed = (name ?? '').trim();
+    this.writeLoop(li, { name: trimmed.length ? trimmed : null }, true);
     this.cfg.onChange();
     return true;
   }
@@ -435,7 +483,129 @@ export class DrawingController {
       partitionLoopIndex: null,
       draftEnd: null,
     };
+    
     this.cfg.onChange();
+  }
+
+  /**
+   * Delete last line / selected door / open-chain segment /
+   * or merge rooms by removing a shared partition wall.
+   */
+  deleteLine(): boolean {
+    // Partition draft: remove last corner / cancel
+    if (this.model.status === 'partition') {
+      const path = this.model.partitionPath ?? [];
+      this.pushHistory();
+      if (path.length <= 1) {
+        this.model = {
+          ...this.model,
+          status: 'idle',
+          partitionPath: null,
+          partitionLoopIndex: null,
+          draftEnd: null,
+        };
+        
+        this.cfg.onChange();
+        return true;
+      }
+      this.model = {
+        ...this.model,
+        partitionPath: path.slice(0, -1),
+        draftEnd: null,
+      };
+      this.cfg.onChange();
+      return true;
+    }
+
+    // Door
+    if (this.selection.kind === 'door') {
+      return this.removeSelectedDoor();
+    }
+
+    // Open chain: remove last wall segment
+    if (
+      this.model.vertices.length > 0 ||
+      this.model.status === 'drawing' ||
+      this.model.status === 'open'
+    ) {
+      this.pushHistory();
+      const vertices = this.model.vertices.slice(0, -1);
+      if (vertices.length <= 1) {
+        this.model = {
+          ...this.model,
+          status: 'idle',
+          vertices: [],
+          draftEnd: null,
+        };
+        this.setSelection({ kind: 'none' });
+      } else {
+        this.model = {
+          ...this.model,
+          status: 'open',
+          vertices,
+          draftEnd: null,
+        };
+        this.setSelection({
+          kind: 'wall',
+          loopIndex: null,
+          wallIndex: vertices.length - 2,
+        });
+      }
+      this.cfg.onChange();
+      return true;
+    }
+
+    // Shared partition wall → merge rooms back into one
+    if (this.selection.kind === 'wall' && this.selection.loopIndex !== null) {
+      return this.deleteSharedWall(
+        this.selection.loopIndex,
+        this.selection.wallIndex,
+      );
+    }
+
+    return false;
+  }
+
+  /** Remove shared wall between two rooms (merge). */
+  deleteSharedWall(loopIndex: number, wallIndex: number): boolean {
+    const partner = findPartnerWall(this.model.loops, loopIndex, wallIndex);
+    if (!partner) {
+      this.cfg.onReject();
+      return false;
+    }
+    const A = this.model.loops[loopIndex];
+    const B = this.model.loops[partner.partnerLoopIndex];
+    if (!A || !B) return false;
+    const merged = mergePolygonsAtSharedWall(
+      A.vertices,
+      wallIndex,
+      B.vertices,
+      partner.partnerWallIndex,
+    );
+    if (!merged) {
+      this.cfg.onReject();
+      return false;
+    }
+    const lo = Math.min(loopIndex, partner.partnerLoopIndex);
+    const hi = Math.max(loopIndex, partner.partnerLoopIndex);
+    const newLoop: Loop = {
+      id: newLoopId(),
+      vertices: merged,
+      doors: [],
+      roomTypeId: A.roomTypeId ?? ROOM_CONFIG.defaultTypeId,
+      name: A.name ?? B.name,
+    };
+    this.pushHistory();
+    const next = [
+      ...this.model.loops.slice(0, lo),
+      newLoop,
+      ...this.model.loops.slice(lo + 1, hi),
+      ...this.model.loops.slice(hi + 1),
+    ];
+    this.model = { ...this.model, loops: next };
+    this.setSelection({ kind: 'wall', loopIndex: lo, wallIndex: 0 }, true, false);
+    this.cfg.onChange();
+    return true;
   }
 
   private patchSelectedDoor(patch: Partial<Door>): boolean {
@@ -447,7 +617,7 @@ export class DrawingController {
     const doors = loop.doors.map((x) =>
       x.id === sel.doorId ? { ...x, hinge: x.hinge ?? 'L', swing: x.swing ?? 1, ...patch } : x,
     );
-    this.writeLoop(sel.loopIndex, { doors });
+    this.writeLoop(sel.loopIndex, { doors }, true);
     this.cfg.onChange();
     this.emitSelection(false, false, false);
     return true;
@@ -514,6 +684,7 @@ export class DrawingController {
       loopB,
       ...this.model.loops.slice(loopIndex + 1),
     ];
+    this.pushHistory();
     this.model = { ...this.model, loops };
     this.meetfoutLoopIndex = null;
     this.setSelection({ kind: 'wall', loopIndex, wallIndex: 0 }, true, false);
@@ -547,6 +718,7 @@ export class DrawingController {
       ...newLoops,
       ...this.model.loops.slice(loopIndex + 1),
     ];
+    this.pushHistory();
     this.model = { ...this.model, loops };
     this.meetfoutLoopIndex = null;
     this.setSelection({ kind: 'wall', loopIndex, wallIndex: 0 }, true, false);
@@ -577,6 +749,7 @@ export class DrawingController {
   }
 
   reset(): void {
+    this.pushHistory();
     this.model = {
       loops: [],
       status: 'idle',
@@ -591,39 +764,34 @@ export class DrawingController {
     this.pointerId = null;
     this.dragDoor = null;
     this.dragWall = null;
+    
     this.emitSelection();
     this.cfg.onChange();
   }
 
-  undo(): void {
-    if (this.model.status === 'drawing' || this.model.vertices.length > 0) {
-      const vertices = this.model.vertices.slice(0, -1);
-      if (vertices.length <= 1) {
-        this.model = { ...this.model, status: 'idle', vertices: [], draftEnd: null };
-        this.setSelection({ kind: 'none' });
-      } else {
-        this.model = {
-          ...this.model,
-          status: 'open',
-          vertices,
-          draftEnd: null,
-        };
-        this.setSelection({
-          kind: 'wall',
-          loopIndex: null,
-          wallIndex: vertices.length - 2,
-        });
-      }
-      this.cfg.onChange();
-      return;
+  /**
+   * Undo last user action (split, muur, deur, tekenen, …).
+   * Not the same as “delete last vertex only”.
+   */
+  undo(): boolean {
+    const prev = this.history.pop();
+    if (!prev) {
+      this.cfg.onReject();
+      return false;
     }
-    if (this.model.loops.length > 0) {
-      const loops = this.model.loops.slice(0, -1);
-      this.model = { ...this.model, loops };
-      this.setSelection({ kind: 'none' });
-      this.meetfoutLoopIndex = null;
-      this.cfg.onChange();
-    }
+    this.historyLocked = true;
+    this.model = prev.model;
+    this.selection = prev.selection;
+    this.meetfoutLoopIndex = prev.meetfoutLoopIndex;
+    this.historyLocked = false;
+    this.active = false;
+    this.pointerId = null;
+    this.dragDoor = null;
+    this.dragWall = null;
+    
+    this.emitSelection();
+    this.cfg.onChange();
+    return true;
   }
 
   private localPoint(e: PointerEvent): Point {
@@ -709,6 +877,7 @@ export class DrawingController {
     const hit = this.hitTestAll(p);
 
     if (hit.kind === 'door') {
+      this.pushHistory();
       this.setSelection(hit, false, false, true);
       this.dragDoor = { loopIndex: hit.loopIndex, doorId: hit.doorId };
       this.active = true;
@@ -738,6 +907,7 @@ export class DrawingController {
     }
 
     if (hit.kind === 'wall' && hit.loopIndex !== null) {
+      this.pushHistory();
       this.setSelection(hit, true, false);
       this.dragWall = {
         loopIndex: hit.loopIndex,
@@ -766,6 +936,7 @@ export class DrawingController {
 
     // Empty click: start new chain if idle
     if (status === 'idle' || (status === 'open' && vertices.length === 0)) {
+      this.pushHistory();
       this.model = {
         ...this.model,
         status: 'drawing',
@@ -917,6 +1088,7 @@ export class DrawingController {
     if (!result) return false;
     if (result.loopA.length < 3 || result.loopB.length < 3) return false;
 
+    this.pushHistory();
     const loopA: Loop = {
       id: newLoopId(),
       vertices: result.loopA,
@@ -1064,6 +1236,7 @@ export class DrawingController {
       };
       const loops = [...this.model.loops, loop];
       const loopIndex = loops.length - 1;
+      this.pushHistory();
       this.model = {
         loops,
         status: 'idle',
@@ -1096,6 +1269,7 @@ export class DrawingController {
     }
 
     const nextVerts = [...vertices, draftEnd];
+    this.pushHistory();
     this.model = {
       ...this.model,
       status: 'open',

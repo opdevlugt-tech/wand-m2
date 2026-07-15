@@ -23,7 +23,7 @@ import {
   wheelZoomFactor,
   zoomAt,
 } from './geometry/view';
-import { ROOM_CONFIG, getRoomType } from './config/rooms';
+import { ROOM_CONFIG, ROOM_NAME_PRESETS_NL, getRoomType, roomDisplayName } from './config/rooms';
 
 const HIT = 16;
 const CLOSE = 22;
@@ -72,6 +72,10 @@ export function boot(root: HTMLElement): void {
   const roomTypeSelect = root.querySelector<HTMLSelectElement>('#room-type');
   const roomTypeField = root.querySelector<HTMLElement>('#room-type-field');
   const labelRoomType = root.querySelector<HTMLElement>('#label-room-type');
+  const roomNameInput = root.querySelector<HTMLInputElement>('#room-name');
+  const roomNameField = root.querySelector<HTMLElement>('#room-name-field');
+  const labelRoomName = root.querySelector<HTMLElement>('#label-room-name');
+  const roomNamePresets = root.querySelector<HTMLDataListElement>('#room-name-presets');
   const splitPopup = root.querySelector<HTMLElement>('#split-popup');
   const splitKicker = root.querySelector<HTMLElement>('#split-kicker');
   const splitTitle = root.querySelector<HTMLElement>('#split-popup-title');
@@ -130,6 +134,10 @@ export function boot(root: HTMLElement): void {
     !roomTypeSelect ||
     !roomTypeField ||
     !labelRoomType ||
+    !roomNameInput ||
+    !roomNameField ||
+    !labelRoomName ||
+    !roomNamePresets ||
     !splitPopup ||
     !splitKicker ||
     !splitTitle ||
@@ -239,7 +247,11 @@ export function boot(root: HTMLElement): void {
     partitionDrawBtn!.title =
       'Vrije scheidingswand met hoeken: muur → hoeken (45°) → muur. Geen auto-deuren.';
     undoBtn!.textContent = tr.undo;
+    undoBtn!.title = 'Laatste handeling ongedaan (Ctrl+Z)';
     resetBtn!.textContent = tr.reset;
+    if (labelRoomType) labelRoomType.textContent = 'Type';
+    if (labelRoomName) labelRoomName.textContent = 'Ruimte';
+    if (roomNameInput) roomNameInput.placeholder = 'bijv. Slaapkamer';
     popupDragHandle!.title = tr.dragTitle;
     popupKicker!.textContent = tr.meetfoutKicker;
     popupTitle!.textContent = tr.meetfoutTitle;
@@ -428,13 +440,35 @@ export function boot(root: HTMLElement): void {
       let warn: string | null = null;
       if (underMinArea) warn = `<${rt.minAreaM2} m²`;
       else if (missingDoor) warn = 'geen deur';
+      const title = roomDisplayName(L.name, L.roomTypeId, lang === 'en' ? 'en' : 'nl');
       return {
         loopIndex: i,
-        label: `${rt.code} ${area.toFixed(1)} m²`,
+        label: `${title} · ${area.toFixed(1)} m²`,
         ok,
         warn,
       };
     });
+  }
+
+  function fillRoomTypeOptions(): void {
+    roomTypeSelect!.innerHTML = '';
+    for (const t of ROOM_CONFIG.types) {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      const min =
+        t.minAreaM2 > 0 ? ` (≥${String(t.minAreaM2).replace('.', ',')} m²)` : '';
+      opt.textContent = `${t.labelNl}${min}`;
+      roomTypeSelect!.appendChild(opt);
+    }
+  }
+
+  function fillRoomNamePresets(): void {
+    roomNamePresets!.innerHTML = '';
+    for (const n of ROOM_NAME_PRESETS_NL) {
+      const opt = document.createElement('option');
+      opt.value = n;
+      roomNamePresets!.appendChild(opt);
+    }
   }
 
   function refreshOddListFromVertices(verts: Point[], absorbIndex: number | null = null): void {
@@ -643,12 +677,17 @@ export function boot(root: HTMLElement): void {
       li === null || (controller.model.loops[li]?.vertices.length ?? 0) < 3;
     const hasRoom = li !== null;
     roomTypeSelect!.disabled = !hasRoom;
+    roomNameInput!.disabled = !hasRoom;
     if (hasRoom) {
       const L = controller.model.loops[li!];
       roomTypeSelect!.value = L.roomTypeId ?? ROOM_CONFIG.defaultTypeId;
+      roomNameInput!.value = L.name ?? '';
       roomTypeField!.classList.add('active');
+      roomNameField!.classList.add('active');
     } else {
       roomTypeField!.classList.remove('active');
+      roomNameField!.classList.remove('active');
+      roomNameInput!.value = '';
     }
     if (!door) {
       doorWidthInput!.value = '';
@@ -1031,6 +1070,8 @@ export function boot(root: HTMLElement): void {
     syncLengthFieldFromSelection();
     syncAngleFieldFromSelection();
     syncDoorFieldFromSelection();
+    updateHud(controller.model);
+    paint();
   });
   resetBtn.addEventListener('click', () => {
     if (popupState) dismissPopup();
@@ -1120,8 +1161,30 @@ export function boot(root: HTMLElement): void {
   roomTypeSelect.addEventListener('change', () => {
     const v = roomTypeSelect.value;
     if (!controller.setSelectedRoomType(v)) return;
+    // Sync name from type label if empty
+    const li = controller.selectedLoopIndex();
+    if (li !== null) {
+      const L = controller.model.loops[li];
+      if (!L.name) {
+        const rt = getRoomType(v);
+        controller.setSelectedRoomName(rt.labelNl);
+        roomNameInput!.value = rt.labelNl;
+      }
+    }
+    syncDoorFieldFromSelection();
     updateHud(controller.model);
     paint();
+  });
+  roomNameInput.addEventListener('change', () => {
+    if (!controller.setSelectedRoomName(roomNameInput.value)) return;
+    updateHud(controller.model);
+    paint();
+  });
+  roomNameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      roomNameInput.blur();
+    }
   });
   splitCancel.addEventListener('click', () => {
     closeSplitPanel();
@@ -1170,6 +1233,33 @@ export function boot(root: HTMLElement): void {
       controller.cancelPartitionDraw();
       updateHud(controller.model);
       paint();
+    }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
+        return;
+      }
+      e.preventDefault();
+      if (popupState) dismissPopup();
+      if (splitState) closeSplitPanel();
+      controller.undo();
+      syncLengthFieldFromSelection();
+      syncAngleFieldFromSelection();
+      syncDoorFieldFromSelection();
+      updateHud(controller.model);
+      paint();
+    }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
+        return;
+      }
+      e.preventDefault();
+      if (controller.deleteLine()) {
+        syncDoorFieldFromSelection();
+        updateHud(controller.model);
+        paint();
+      }
     }
   });
   window.addEventListener('keyup', (e) => {
@@ -1273,6 +1363,8 @@ export function boot(root: HTMLElement): void {
   window.addEventListener('resize', layout);
   setupPopupDrag();
   setupLangPicker();
+  fillRoomTypeOptions();
+  fillRoomNamePresets();
   applyStaticI18n();
   syncZoomLabel();
   layout();
