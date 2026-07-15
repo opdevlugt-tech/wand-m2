@@ -38,6 +38,7 @@
             <button type="button" id="undo" class="btn" title="Ongedaan (Ctrl+Z)">↩</button>
             <button type="button" id="save" class="btn btn-primary" title="Opslaan">Opslaan</button>
             <button type="button" id="export-png" class="btn btn-primary" title="Export PNG">PNG</button>
+            <button type="button" id="view-3d" class="btn btn-primary" title="3D weergave">3D</button>
             <button type="button" id="load" class="btn" title="Laden">Laden</button>
             <input id="load-file" type="file" accept="application/json,.json" class="hidden" />
             <button type="button" id="reset" class="btn btn-danger" title="Alles wissen">Reset</button>
@@ -195,6 +196,17 @@
         </div>
       </main>
       <p class="hint" id="footer-hint"></p>
+    </div>
+
+    <div id="view3d-overlay" class="view3d-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="view3d-title">
+      <div class="view3d-chrome">
+        <div class="view3d-head">
+          <strong id="view3d-title">3D weergave</strong>
+          <span class="view3d-hint">Sleep = draaien · scroll = zoom</span>
+          <button type="button" id="view3d-close" class="btn">Sluiten</button>
+        </div>
+        <canvas id="view3d-canvas"></canvas>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

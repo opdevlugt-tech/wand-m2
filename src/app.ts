@@ -44,6 +44,7 @@ import {
 } from './storage/plans';
 import { bootElectraPalette } from './electra-ui';
 import { buildBom, distPointToPolyline, formatBomQty, polylineLengthM } from './install/bom';
+import { defaultView3dCamera, drawView3d } from './view3d';
 
 const HIT = 16;
 const CLOSE = 22;
@@ -108,7 +109,11 @@ export function boot(root: HTMLElement): void {
   const undoBtn = root.querySelector<HTMLButtonElement>('#undo');
   const saveBtn = root.querySelector<HTMLButtonElement>('#save');
   const exportPngBtn = root.querySelector<HTMLButtonElement>('#export-png');
-  const loadBtn = root.querySelector<HTMLButtonElement>('#load');
+    const view3dBtn = root.querySelector<HTMLButtonElement>('#view-3d');
+    const view3dOverlay = root.querySelector<HTMLElement>('#view3d-overlay');
+    const view3dCanvas = root.querySelector<HTMLCanvasElement>('#view3d-canvas');
+    const view3dClose = root.querySelector<HTMLButtonElement>('#view3d-close');
+    const loadBtn = root.querySelector<HTMLButtonElement>('#load');
   const loadFile = root.querySelector<HTMLInputElement>('#load-file');
   const resetBtn = root.querySelector<HTMLButtonElement>('#reset');
   const tabDraw = root.querySelector<HTMLButtonElement>('#tab-draw');
@@ -187,7 +192,11 @@ export function boot(root: HTMLElement): void {
     !undoBtn ||
     !saveBtn ||
     !exportPngBtn ||
-    !loadBtn ||
+        !view3dBtn ||
+        !view3dOverlay ||
+        !view3dCanvas ||
+        !view3dClose ||
+        !loadBtn ||
     !loadFile ||
     !resetBtn ||
     !tabDraw ||
@@ -486,24 +495,32 @@ export function boot(root: HTMLElement): void {
         splitState?.mode === 'free' ? splitState.freeHover : null,
       partitionPath: controller.model.partitionPath,
       roomBadges: buildRoomBadges(model),
-      installations: installations.map((p) => ({
+            // Installaties alleen op tab Installaties — niet op Plattegrond
+            installations:
+              appMode === 'install'
+                ? installations.map((p) => ({
                     x: p.x,
                     y: p.y,
                     defId: p.defId,
                     selected: p.id === selectedInstallId,
                     rot: p.rot ?? 0,
-                  })),
-            runs: installRuns.map((r) => ({
-              points: r.points,
-              defId: r.defId,
-              selected: r.id === selectedRunId,
-            })),
-            runDraft: runDraft
-              ? { points: runDraft.points, cursor: runDraft.cursor, defId: runDraft.defId }
-              : null,
-                  view,
-                });
-              }
+                  }))
+                : undefined,
+            runs:
+              appMode === 'install'
+                ? installRuns.map((r) => ({
+                    points: r.points,
+                    defId: r.defId,
+                    selected: r.id === selectedRunId,
+                  }))
+                : undefined,
+            runDraft:
+              appMode === 'install' && runDraft
+                ? { points: runDraft.points, cursor: runDraft.cursor, defId: runDraft.defId }
+                : null,
+            view,
+          });
+        }
 
         function refreshBom(): void {
           if (!bomList || !bomPanel) return;
@@ -1336,7 +1353,92 @@ export function boot(root: HTMLElement): void {
 
     exportPngBtn.addEventListener('click', () => exportPng());
 
-    loadBtn.addEventListener('click', () => loadFile!.click());
+        // —— 3D viewer (plattegrond extrusie) ——
+        let v3 = defaultView3dCamera(controller.model, getPxPerMeter());
+        let v3Drag: { x: number; y: number } | null = null;
+
+        function paint3d(): void {
+          const c = view3dCanvas!;
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          const rect = c.getBoundingClientRect();
+          const w = Math.max(1, Math.floor(rect.width));
+          const h = Math.max(1, Math.floor(rect.height));
+          c.width = Math.floor(w * dpr);
+          c.height = Math.floor(h * dpr);
+          const cctx = c.getContext('2d');
+          if (!cctx) return;
+          cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          drawView3d(cctx, w, h, controller.model, {
+            pxPerMeter: getPxPerMeter(),
+            wallHeightM: 2.5,
+            ...v3,
+          });
+        }
+
+        function open3d(): void {
+          v3 = defaultView3dCamera(controller.model, getPxPerMeter());
+          view3dOverlay!.classList.remove('hidden');
+          requestAnimationFrame(() => paint3d());
+          statusEl!.textContent = '3D: sleep draaien · scroll zoom · Esc sluiten';
+        }
+
+        function close3d(): void {
+          view3dOverlay!.classList.add('hidden');
+          v3Drag = null;
+        }
+
+        view3dBtn!.addEventListener('click', () => open3d());
+        view3dClose!.addEventListener('click', () => close3d());
+        view3dOverlay!.addEventListener('click', (e) => {
+          if (e.target === view3dOverlay) close3d();
+        });
+        window.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && !view3dOverlay!.classList.contains('hidden')) {
+            e.preventDefault();
+            close3d();
+          }
+        });
+        view3dCanvas!.addEventListener('pointerdown', (e) => {
+          if (e.button !== 0) return;
+          v3Drag = { x: e.clientX, y: e.clientY };
+          view3dCanvas!.setPointerCapture(e.pointerId);
+        });
+        view3dCanvas!.addEventListener('pointermove', (e) => {
+          if (!v3Drag) return;
+          const dx = e.clientX - v3Drag.x;
+          const dy = e.clientY - v3Drag.y;
+          v3Drag = { x: e.clientX, y: e.clientY };
+          v3 = {
+            ...v3,
+            yaw: v3.yaw + dx * 0.01,
+            pitch: Math.max(0.15, Math.min(1.2, v3.pitch + dy * 0.008)),
+          };
+          paint3d();
+        });
+        view3dCanvas!.addEventListener('pointerup', (e) => {
+          v3Drag = null;
+          try {
+            view3dCanvas!.releasePointerCapture(e.pointerId);
+          } catch {
+            /* ignore */
+          }
+        });
+        view3dCanvas!.addEventListener(
+          'wheel',
+          (e) => {
+            if (view3dOverlay!.classList.contains('hidden')) return;
+            e.preventDefault();
+            const f = e.deltaY > 0 ? 1.08 : 0.92;
+            v3 = { ...v3, distance: Math.max(1.5, Math.min(80, v3.distance * f)) };
+            paint3d();
+          },
+          { passive: false },
+        );
+        window.addEventListener('resize', () => {
+          if (!view3dOverlay!.classList.contains('hidden')) paint3d();
+        });
+
+        loadBtn.addEventListener('click', () => loadFile!.click());
     loadFile.addEventListener('change', async () => {
       const file = loadFile.files?.[0];
       loadFile.value = '';

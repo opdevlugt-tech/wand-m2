@@ -1151,3 +1151,50 @@ body {
 }
 .bom-panel.has-items .bom-empty { display: none; }
 .bom-panel:not(.has-items) .bom-list { display: none; }
+
+/* 3D overlay */
+.view3d-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(5, 8, 12, 0.82);
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0)
+    env(safe-area-inset-left, 0);
+}
+.view3d-overlay.hidden { display: none !important; }
+.view3d-chrome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #0b0e12;
+}
+.view3d-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.55rem;
+  background: #121820;
+  border-bottom: 1px solid #243040;
+  flex-shrink: 0;
+}
+.view3d-head strong {
+  font-size: 0.85rem;
+}
+.view3d-hint {
+  flex: 1;
+  font-size: 0.7rem;
+  color: #6a7a8c;
+}
+#view3d-canvas {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+}
+#view3d-canvas:active { cursor: grabbing; }
