@@ -15,8 +15,8 @@
     <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
     <title>Wand-m2</title>
-    <script type="module" crossorigin src="/wand-m2/assets/index-CFCL6JQT.js"></script>
-    <link rel="stylesheet" crossorigin href="/wand-m2/assets/index-7QFdg7iG.css">
+    <script type="module" crossorigin src="/wand-m2/assets/index-CXRTfE53.js"></script>
+    <link rel="stylesheet" crossorigin href="/wand-m2/assets/index-ALkOdAPM.css">
   </head>
   <body>
     <div id="app">
@@ -71,8 +71,17 @@
           <button type="button" id="door-hinge-r" class="btn" disabled title="Scharnier rechts">R</button>
           <button type="button" id="door-swing" class="btn" disabled title="Draairichting omdraaien">↺</button>
           <button type="button" id="split-loop" class="btn" disabled></button>
+          <button type="button" id="partition-draw" class="btn" disabled title="Vrije scheidingswand tekenen">✂ Teken</button>
+          <label class="room-type-field" id="room-type-field">
+            <span id="label-room-type">Kamer</span>
+            <select id="room-type">
+              <option value="other">Overig</option>
+              <option value="single">1p ≥3,5 m²</option>
+              <option value="double">2p ≥7 m²</option>
+            </select>
+          </label>
           <button type="button" id="zoom-out" class="btn" title="Zoom uit">−</button>
-          <button type="button" id="zoom-reset" class="btn" title="Zoom 100%">100%</button>
+          <button type="button" id="zoom-reset" class="btn" title="Passend / 100%">Fit</button>
           <button type="button" id="zoom-in" class="btn" title="Zoom in">+</button>
           <label class="scale">
             <span id="label-ppm"></span>
