@@ -4,7 +4,6 @@
 import {
   electraPrimary,
   electraSecondary,
-  getInstallDef,
 } from './config/installations';
 import { drawElectraSymbol } from './canvas/symbols';
 
@@ -61,15 +60,6 @@ export function bootElectraPalette(
   moreWrap.appendChild(moreLabel);
   moreWrap.appendChild(sel);
   palette.appendChild(moreWrap);
-
-  function clearActiveVisual(): void {
-    primaryRow.querySelectorAll('.symbol-btn').forEach((el) => {
-      el.classList.remove('active');
-    });
-    if (sel.value && active !== sel.value) {
-      /* keep select value only if it is the active tool */
-    }
-  }
 
   function setActiveVisual(id: string | null): void {
     active = id;
