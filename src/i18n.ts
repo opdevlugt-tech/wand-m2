@@ -88,7 +88,7 @@ export const translations: Record<Lang, Dict> = {
     statusDoor: (w) => `Deur ${w} · sleep om te verplaatsen · typ breedte`,
     statusIdle: 'Klaar. Selecteer kamer · type · Deel… of ✂ Teken.',
     statusPartitionDraw:
-      'Scheiding: 1e klik op buitenmuur · hoeken binnen · laatste klik op andere muur. Esc = stop.',
+      '✂ Scheiding: 1) klik op buitenmuur · 2) optioneel hoeken (45°) · 3) andere muur. Sleep muren om te verschuiven. Esc = stop. Geen auto-deuren.',
     wallM: 'Muur (m)',
     doorM: 'Deur (m)',
     addDoor: '+ Deur',
@@ -102,13 +102,13 @@ export const translations: Record<Lang, Dict> = {
     splitKicker: 'Scheidingswand',
     splitTitle: 'Deel de lus',
     splitLead: (n) => `${n} vrije optie(s)`,
-    splitLeadEqual: 'Kies ÷2 / ÷3 / ÷4 (gelijke banen). Hover = preview. ↻ = andere richting.',
+    splitLeadEqual: '÷2/÷3/÷4 = gelijke banen. Of kies vrije positie. Of sluit en gebruik ✂ Scheiding voor hoeken/schuin. Geen auto-deuren.',
     splitApply: 'Deel hier',
     splitCancel: 'Annuleren',
     splitNone: 'Geen geldige scheiding voor deze vorm.',
     splitByN: (n) => `Delen door ${n}`,
     splitFlipAxis: 'Wissel horizontaal/verticaal',
-    splitFree: 'Of vrije positie:',
+    splitFree: 'Of snelle positie (recht):',
     statusSplit: (n) => `Vrije scheiding: optie ${n}`,
     statusSplitParts: (n) => `Delen door ${n} · gelijke banen`,
     interiorDeg: 'Binnenhoek (°)',
@@ -133,7 +133,7 @@ export const translations: Record<Lang, Dict> = {
     residual: 'restfout',
     hoverCorner: (n) => `Hover: live vorm met restfout bij hoek ${n}`,
     hint:
-      'Kamers: type 1p/2p. Deel… ÷2/3/4 of ✂ Teken (schuine wanden). Zoom: wiel · pinch · Fit · spatie+sleep. Maten blijven.',
+      '✂ Scheiding = muur→hoeken→muur (45°). Deel… = ÷2/3/4. Sleep muren. +Deur handmatig. Tegel 0,3 m. Zoom: wiel/Fit.',
   },
   en: {
     pageTitle: 'Wall-m²',

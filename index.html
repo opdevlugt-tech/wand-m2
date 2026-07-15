@@ -25,68 +25,85 @@
         </div>
         <div class="hud-right">
           <div id="lang-picker" class="lang-picker" role="group" aria-label="Language"></div>
-          <label class="scale length-field" id="length-field">
-            <span id="label-wall"></span>
-            <input
-              id="wall-length"
-              type="number"
-              min="0.01"
-              step="0.01"
-              inputmode="decimal"
-              placeholder="—"
-              disabled
-            />
-          </label>
-          <label class="scale angle-field" id="angle-field">
-            <span id="label-angle"></span>
-            <input
-              id="corner-angle"
-              type="number"
-              min="1"
-              max="359"
-              step="0.1"
-              inputmode="decimal"
-              placeholder="—"
-              disabled
-            />
-          </label>
-          <button type="button" id="snap-angle" class="btn" disabled></button>
-          <button type="button" id="add-door" class="btn" disabled></button>
-          <label class="scale door-field" id="door-field">
-            <span id="label-door"></span>
-            <input
-              id="door-width"
-              type="number"
-              min="0.3"
-              step="0.05"
-              inputmode="decimal"
-              placeholder="—"
-              disabled
-            />
-          </label>
-          <button type="button" id="remove-door" class="btn btn-danger" disabled></button>
-          <button type="button" id="door-hinge-l" class="btn" disabled title="Scharnier links">L</button>
-          <button type="button" id="door-hinge-r" class="btn" disabled title="Scharnier rechts">R</button>
-          <button type="button" id="door-swing" class="btn" disabled title="Draairichting omdraaien">↺</button>
-          <button type="button" id="split-loop" class="btn" disabled></button>
-          <button type="button" id="partition-draw" class="btn" disabled title="Vrije scheidingswand tekenen">✂ Teken</button>
-          <label class="room-type-field" id="room-type-field">
-            <span id="label-room-type">Kamer</span>
-            <select id="room-type">
-              <option value="other">Overig</option>
-              <option value="single">1p ≥3,5 m²</option>
-              <option value="double">2p ≥7 m²</option>
-            </select>
-          </label>
-          <button type="button" id="zoom-out" class="btn" title="Zoom uit">−</button>
-          <button type="button" id="zoom-reset" class="btn" title="Passend / 100%">Fit</button>
-          <button type="button" id="zoom-in" class="btn" title="Zoom in">+</button>
-          <label class="scale">
-            <span id="label-ppm"></span>
-            <input id="px-per-m" type="number" min="5" max="2000" step="1" value="50" inputmode="numeric" />
-          </label>
-          <button type="button" id="undo" class="btn"></button>
-          <button type="button" id="reset" class="btn btn-danger"></button>
+
+          <div class="tool-group" title="Maten">
+            <label class="scale length-field" id="length-field">
+              <span id="label-wall"></span>
+              <input
+                id="wall-length"
+                type="number"
+                min="0.01"
+                step="0.01"
+                inputmode="decimal"
+                placeholder="—"
+                disabled
+              />
+            </label>
+            <label class="scale angle-field" id="angle-field">
+              <span id="label-angle"></span>
+              <input
+                id="corner-angle"
+                type="number"
+                min="1"
+                max="359"
+                step="0.1"
+                inputmode="decimal"
+                placeholder="—"
+                disabled
+              />
+            </label>
+            <button type="button" id="snap-angle" class="btn" disabled></button>
+          </div>
+
+          <div class="tool-group" title="Deuren">
+            <button type="button" id="add-door" class="btn" disabled></button>
+            <label class="scale door-field" id="door-field">
+              <span id="label-door"></span>
+              <input
+                id="door-width"
+                type="number"
+                min="0.3"
+                step="0.05"
+                inputmode="decimal"
+                placeholder="—"
+                disabled
+              />
+            </label>
+            <button type="button" id="remove-door" class="btn btn-danger" disabled></button>
+            <button type="button" id="door-hinge-l" class="btn" disabled title="Scharnier links">L</button>
+            <button type="button" id="door-hinge-r" class="btn" disabled title="Scharnier rechts">R</button>
+            <button type="button" id="door-swing" class="btn" disabled title="Draairichting omdraaien">↺</button>
+          </div>
+
+          <div class="tool-group tool-group-primary" title="Kamers & scheiding">
+            <label class="room-type-field" id="room-type-field">
+              <span id="label-room-type">Kamer</span>
+              <select id="room-type">
+                <option value="other">Overig</option>
+                <option value="single">1p ≥3,5 m²</option>
+                <option value="double">2p ≥7 m²</option>
+              </select>
+            </label>
+            <button type="button" id="partition-draw" class="btn btn-primary" disabled title="Vrije scheidingswand: muur → hoeken → muur">
+              ✂ Scheiding
+            </button>
+            <button type="button" id="split-loop" class="btn" disabled title="Gelijke banen ÷2/÷3/÷4"></button>
+          </div>
+
+          <div class="tool-group" title="Weergave">
+            <button type="button" id="zoom-out" class="btn" title="Zoom uit">−</button>
+            <button type="button" id="zoom-reset" class="btn" title="Passend / 100%">Fit</button>
+            <button type="button" id="zoom-in" class="btn" title="Zoom in">+</button>
+            <label class="scale">
+              <span id="label-ppm"></span>
+              <input id="px-per-m" type="number" min="5" max="2000" step="1" value="50" inputmode="numeric" />
+            </label>
+          </div>
+
+          <div class="tool-group">
+            <button type="button" id="undo" class="btn"></button>
+            <button type="button" id="reset" class="btn btn-danger"></button>
+          </div>
         </div>
       </header>
       <main class="stage">

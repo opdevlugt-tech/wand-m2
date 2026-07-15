@@ -234,6 +234,10 @@ export function boot(root: HTMLElement): void {
     doorSwingBtn!.textContent = tr.doorSwing;
     doorSwingBtn!.title = 'Draairichting omdraaien';
     splitLoopBtn!.textContent = tr.splitLoop;
+    partitionDrawBtn!.textContent =
+      controller.model.status === 'partition' ? 'Esc stop' : '✂ Scheiding';
+    partitionDrawBtn!.title =
+      'Vrije scheidingswand met hoeken: muur → hoeken (45°) → muur. Geen auto-deuren.';
     undoBtn!.textContent = tr.undo;
     resetBtn!.textContent = tr.reset;
     popupDragHandle!.title = tr.dragTitle;

@@ -476,7 +476,7 @@ export class DrawingController {
   }
 
   /**
-   * Split loop into two by partition candidate. Adds a door on the shared wall of each room.
+   * Split loop into two by partition candidate. No automatic doors — user adds them.
    */
   splitLoopWithPartition(loopIndex: number, c: PartitionCandidate): boolean {
     const loop = this.model.loops[loopIndex];
@@ -496,14 +496,14 @@ export class DrawingController {
     const loopA: Loop = {
       id: newLoopId(),
       vertices: split.loopA,
-      doors: this.doorOnPartitionWall(split.loopA),
+      doors: [],
       roomTypeId: ROOM_CONFIG.defaultTypeId,
       name: null,
     };
     const loopB: Loop = {
       id: newLoopId(),
       vertices: split.loopB,
-      doors: this.doorOnPartitionWall(split.loopB),
+      doors: [],
       roomTypeId: ROOM_CONFIG.defaultTypeId,
       name: null,
     };
@@ -536,12 +536,11 @@ export class DrawingController {
     const newLoops: Loop[] = pieces.map((verts) => ({
       id: newLoopId(),
       vertices: verts,
-      doors: this.doorOnPartitionWall(verts),
+      doors: [],
       roomTypeId: ROOM_CONFIG.defaultTypeId,
       name: null,
     }));
-    // Only first/last get outer walls without shared door both sides - each strip gets door on one partition edge
-    // doorOnPartitionWall puts door on last→first which is the cut for sequential remainders - good enough
+    // No auto-doors: user places access doors after splitting
     const loops = [
       ...this.model.loops.slice(0, loopIndex),
       ...newLoops,
@@ -552,27 +551,6 @@ export class DrawingController {
     this.setSelection({ kind: 'wall', loopIndex, wallIndex: 0 }, true, false);
     this.cfg.onChange();
     return true;
-  }
-
-  private doorOnPartitionWall(verts: Point[]): Door[] {
-    const wi = verts.length - 1;
-    if (wi < 0) return [];
-    const segs = wallSegments(verts, true);
-    const seg = segs[wi];
-    if (!seg) return [];
-    const widthM = DEFAULT_DOOR_M;
-    const g = doorGeometry(seg.a, seg.b, 0.5, widthM, this.cfg.getPxPerMeter());
-    if (!g) return [];
-    return [
-      {
-        id: newDoorId(),
-        wallIndex: wi,
-        t: 0.5,
-        widthM,
-        hinge: 'L',
-        swing: 1,
-      },
-    ];
   }
 
   private moveDoorToPoint(loopIndex: number, doorId: string, p: Point): boolean {
@@ -816,6 +794,18 @@ export class DrawingController {
       return;
     }
 
+    // Live draft for free partition (corners / schuine wanden)
+    if (
+      this.model.status === 'partition' &&
+      this.model.partitionPath &&
+      this.model.partitionPath.length > 0
+    ) {
+      const draft = this.snapPartitionDraft(p);
+      this.model = { ...this.model, draftEnd: draft };
+      this.cfg.onChange();
+      return;
+    }
+
     if (!this.active || e.pointerId !== this.pointerId) return;
     if (this.model.status !== 'drawing') return;
     if (this.model.vertices.length === 0) return;
@@ -823,6 +813,30 @@ export class DrawingController {
     this.model = { ...this.model, draftEnd: snapped };
     this.cfg.onChange();
   };
+
+  /** Snap partition intermediate points: boundary snap or 45° from last path point. */
+  private snapPartitionDraft(raw: Point): Point {
+    const li = this.model.partitionLoopIndex;
+    const path = this.model.partitionPath;
+    if (li === null || !path?.length) return raw;
+    const loop = this.model.loops[li];
+    if (!loop) return raw;
+
+    const hit = this.worldHitRadius() * 1.4;
+    const onBoundary = pointToWallParam(loop.vertices, raw);
+    if (onBoundary) {
+      const segs = wallSegments(loop.vertices, true);
+      const seg = segs[onBoundary.wallIndex];
+      const pt = pointOnSegment(seg.a, seg.b, onBoundary.t);
+      if (dist(raw, pt) <= hit) return pt;
+    }
+
+    const last = path[path.length - 1];
+    const ang = angleOf(last, raw);
+    const snappedAng = snapWorldAngle(ang, Math.PI / 4);
+    const len = dist(last, raw);
+    return pointFromPolar(last, snappedAng, len);
+  }
 
   private moveDraggedWall(p: Point): void {
     if (!this.dragWall) return;
@@ -1060,14 +1074,14 @@ export class DrawingController {
       const loopA: Loop = {
         id: newLoopId(),
         vertices: result.loopA,
-        doors: this.doorOnPartitionWall(result.loopA),
+        doors: [],
         roomTypeId: loop.roomTypeId ?? ROOM_CONFIG.defaultTypeId,
         name: null,
       };
       const loopB: Loop = {
         id: newLoopId(),
         vertices: result.loopB,
-        doors: this.doorOnPartitionWall(result.loopB),
+        doors: [],
         roomTypeId: ROOM_CONFIG.defaultTypeId,
         name: null,
       };
@@ -1091,12 +1105,72 @@ export class DrawingController {
       return;
     }
 
-    // Intermediate corner: prefer inside polygon
+    // Intermediate corner: prefer inside polygon, snap 45°
     if (!pointInPolygon(p, loop.vertices) && !snapBoundary) {
       this.cfg.onReject();
       return;
     }
-    path.push({ ...p });
+    const corner = this.snapPartitionDraft(p);
+    // If snap landed on boundary and we already have points, treat as close
+    const cornerOnB = pointToWallParam(loop.vertices, corner);
+    if (
+      cornerOnB &&
+      dist(
+        corner,
+        pointOnSegment(
+          loop.vertices[cornerOnB.wallIndex],
+          loop.vertices[(cornerOnB.wallIndex + 1) % loop.vertices.length],
+          cornerOnB.t,
+        ),
+      ) <= hit &&
+      path.length >= 1
+    ) {
+      // re-enter as boundary close via recursion path — push then finish
+      const segs = wallSegments(loop.vertices, true);
+      const seg = segs[cornerOnB.wallIndex];
+      const pt = {
+        x: seg.a.x + (seg.b.x - seg.a.x) * cornerOnB.t,
+        y: seg.a.y + (seg.b.y - seg.a.y) * cornerOnB.t,
+      };
+      if (dist(pt, path[0]) >= 8) {
+        const full = [...path, pt];
+        const result = splitPolygonByPath(loop.vertices, full);
+        if (result) {
+          const loopA: Loop = {
+            id: newLoopId(),
+            vertices: result.loopA,
+            doors: [],
+            roomTypeId: loop.roomTypeId ?? ROOM_CONFIG.defaultTypeId,
+            name: null,
+          };
+          const loopB: Loop = {
+            id: newLoopId(),
+            vertices: result.loopB,
+            doors: [],
+            roomTypeId: ROOM_CONFIG.defaultTypeId,
+            name: null,
+          };
+          const loops = [
+            ...this.model.loops.slice(0, li),
+            loopA,
+            loopB,
+            ...this.model.loops.slice(li + 1),
+          ];
+          this.model = {
+            ...this.model,
+            loops,
+            status: 'idle',
+            partitionPath: null,
+            partitionLoopIndex: null,
+            draftEnd: null,
+          };
+          this.setSelection({ kind: 'wall', loopIndex: li, wallIndex: 0 }, true, false);
+          this.cfg.onChange();
+          return;
+        }
+      }
+    }
+    path.push({ ...corner });
     this.model = { ...this.model, partitionPath: path, draftEnd: null };
     this.cfg.onChange();
   }

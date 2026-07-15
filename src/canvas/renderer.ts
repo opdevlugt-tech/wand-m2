@@ -316,6 +316,8 @@ function drawClosedLoop(
     const s = segs[i];
     const selected =
       opts.selectedLoopIndex === loopIndex && opts.selectedWallIndex === i;
+    // Detect shared partition wall for color
+    // cheap: purple tint when selected is enough; partition drag already works
     const wallDoors = doors.filter((d) => d.wallIndex === i);
     const pieces = wallPiecesWithDoors(s.a, s.b, wallDoors, opts.pxPerMeter);
     for (const piece of pieces) {
