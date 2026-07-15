@@ -15,8 +15,8 @@
     <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
     <title>Wand-m2</title>
-    <script type="module" crossorigin src="/wand-m2/assets/index-B6HwJSVI.js"></script>
-    <link rel="stylesheet" crossorigin href="/wand-m2/assets/index-Ba6odNs7.css">
+    <script type="module" crossorigin src="/wand-m2/assets/index-jn07__d0.js"></script>
+    <link rel="stylesheet" crossorigin href="/wand-m2/assets/index-7QFdg7iG.css">
   </head>
   <body>
     <div id="app">
@@ -53,6 +53,20 @@
             />
           </label>
           <button type="button" id="snap-angle" class="btn" disabled></button>
+          <button type="button" id="add-door" class="btn" disabled></button>
+          <label class="scale door-field" id="door-field">
+            <span id="label-door"></span>
+            <input
+              id="door-width"
+              type="number"
+              min="0.3"
+              step="0.05"
+              inputmode="decimal"
+              placeholder="—"
+              disabled
+            />
+          </label>
+          <button type="button" id="remove-door" class="btn btn-danger" disabled></button>
           <label class="scale">
             <span id="label-ppm"></span>
             <input id="px-per-m" type="number" min="5" max="2000" step="1" value="50" inputmode="numeric" />
