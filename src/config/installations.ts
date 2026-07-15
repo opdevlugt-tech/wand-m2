@@ -26,7 +26,7 @@ export const INSTALL_CATEGORIES: {
   { id: 'drain', labelNl: 'Afvoerinstallatie', short: 'Afvoer' },
 ];
 
-/** Electra-catalogus (situatieschema-symbolen). */
+/** Catalogus — Electra eerst volledig; water/afvoer placeholders. */
 export const INSTALL_CATALOG: InstallComponentDef[] = [
   // Contactdozen (D)
   {
@@ -200,6 +200,32 @@ export const INSTALL_CATALOG: InstallComponentDef[] = [
     symbol: 'earth',
   },
 ];
+
+/**
+ * Meest voorkomend op situatieschema — vast in de balk.
+ * Volgorde = display-volgorde.
+ */
+export const ELECTRA_PRIMARY_IDS: string[] = [
+  'el-socket-pe', // contactdoos met aarding (standaard NL/BE)
+  'el-socket', // contactdoos
+  'el-socket-3', // meervoudig
+  'el-switch', // 1-polig
+  'el-switch-w', // wissel
+  'el-light', // lichtpunt
+  'el-push', // drukknop
+  'el-panel', // verdeelkast
+];
+
+export function electraPrimary(): InstallComponentDef[] {
+  return ELECTRA_PRIMARY_IDS.map((id) => getInstallDef(id)).filter(
+    (d): d is InstallComponentDef => !!d,
+  );
+}
+
+export function electraSecondary(): InstallComponentDef[] {
+  const primary = new Set(ELECTRA_PRIMARY_IDS);
+  return catalogByCategory('electric').filter((c) => !primary.has(c.id));
+}
 
 export function catalogByCategory(cat: InstallCategory): InstallComponentDef[] {
   return INSTALL_CATALOG.filter((c) => c.category === cat);
