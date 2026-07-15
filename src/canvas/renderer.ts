@@ -9,14 +9,10 @@ import {
   lengthM,
   mid,
   nearPoint,
-  polygonAreaM2,
-  formatArea,
   isCanonicalAngle,
   interiorBisectorRad,
-  interiorExterior,
   interiorExteriorAt,
   polygonWindingSign,
-  relativeTurnDeg,
   wallPiecesWithDoors,
   wallSegments,
 } from '../geometry/math';
@@ -143,6 +139,9 @@ export function drawScene(
     const doors = loops[li].doors ?? [];
     drawClosedLoop(ctx, verts, opts, li, fills[li % fills.length], doors);
   }
+
+  // Outer overall length × width around everything
+  drawOverallDimensions(ctx, model, opts.pxPerMeter);
 
   // Ghost original during relocate preview
   if (opts.ghostVertices && opts.ghostVertices.length >= 2) {
@@ -329,8 +328,8 @@ function drawClosedLoop(
         selected ? 4.5 : 3,
       );
     }
-    // length label on full wall (mid of original)
-    drawLengthLabel(ctx, s.a, s.b, opts.pxPerMeter, false, selected);
+    // length label on full wall (mid of original) — exterior side
+    drawLengthLabel(ctx, s.a, s.b, opts.pxPerMeter, false, selected, wind);
 
     for (const d of wallDoors) {
       const g = doorGeometry(s.a, s.b, d.t, d.widthM, opts.pxPerMeter);
@@ -358,12 +357,9 @@ function drawClosedLoop(
       opts.selectedLoopIndex === loopIndex &&
       (opts.selectedVertexIndex === i || opts.popupCornerIndex === i);
     const color = isSel ? COLORS.vertexSel : i === 0 ? COLORS.first : COLORS.vertex;
-    drawVertex(ctx, vertices[i], color, isSel ? 7 : 5);
+    drawVertex(ctx, vertices[i], color, isSel ? 5 : 2.5);
   }
-
-  const area = polygonAreaM2(vertices, opts.pxPerMeter);
-  const c = centroid(vertices);
-  drawBadge(ctx, c.x, c.y, formatArea(area));
+  // area is shown via room badges — skip big centroid badge (clutter)
 }
 
 function drawDoor(
@@ -516,11 +512,12 @@ function drawTinyTag(
   text: string,
   color?: string,
 ): void {
-  ctx.font = `600 ${lw(10)}px system-ui, sans-serif`;
+  ctx.font = `600 ${lw(9)}px system-ui, sans-serif`;
   const tw = ctx.measureText(text).width;
-  const pad = lw(4);
+  const pad = lw(3);
+  const h = lw(13);
   ctx.fillStyle = 'rgba(15,20,25,0.85)';
-  ctx.fillRect(x - tw / 2 - pad, y - lw(8), tw + pad * 2, lw(16));
+  ctx.fillRect(x - tw / 2 - pad, y - h / 2, tw + pad * 2, h);
   ctx.fillStyle = color ?? COLORS.draft;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -625,43 +622,165 @@ function drawLengthLabel(
   pxPerMeter: number,
   live = false,
   selected = false,
+  /** polygon winding (+1 CCW / -1 CW); null = open chain → offset “above” wall */
+  wind: number | null = null,
 ): void {
   const m = lengthM(a, b, pxPerMeter);
-  if (m < 0.05 && !live) return;
-  const c = mid(a, b);
-  const ang = angleOf(a, b);
-  const ox = Math.sin(ang) * 14;
-  const oy = -Math.cos(ang) * 14;
+  if (m < 0.04 && !live) return;
+
+  const wallPx = dist(a, b);
+  // Too short on screen → skip (unless selected/live)
+  if (!live && !selected && wallPx * drawScale < 22) return;
+
   const text = formatMeters(m);
-  ctx.font =
-    live || selected
-      ? `600 ${lw(12)}px system-ui, sans-serif`
-      : `500 ${lw(12)}px system-ui, sans-serif`;
+  const fontPx = live || selected ? 10 : 9;
+  ctx.font = `${selected || live ? 600 : 500} ${lw(fontPx)}px system-ui, sans-serif`;
   const tw = ctx.measureText(text).width;
-  const pad = lw(4);
-  const x = c.x + ox;
-  const y = c.y + oy;
-  ctx.fillStyle = selected ? COLORS.labelSelectedBg : COLORS.labelBg;
-  ctx.fillRect(x - tw / 2 - pad, y - lw(9), tw + pad * 2, lw(18));
-  ctx.fillStyle = live ? COLORS.draft : selected ? COLORS.labelSelected : COLORS.label;
+  // Hide if label wider than wall (clutter) unless selected
+  if (!live && !selected && tw > wallPx * 0.92) return;
+
+  // Exterior offset: left of a→b for CCW (wind>0), right for CW
+  const ang = angleOf(a, b);
+  const side = wind === null ? 1 : wind >= 0 ? 1 : -1;
+  const off = lw(live || selected ? 12 : 10) * side;
+  const nx = Math.sin(ang) * off;
+  const ny = -Math.cos(ang) * off;
+
+  // Dim line parallel to wall
+  const a2 = { x: a.x + nx, y: a.y + ny };
+  const b2 = { x: b.x + nx, y: b.y + ny };
+  const tick = lw(4) * side;
+  const tx = Math.sin(ang) * tick;
+  const ty = -Math.cos(ang) * tick;
+
+  ctx.strokeStyle = selected
+    ? 'rgba(255, 209, 102, 0.75)'
+    : live
+      ? 'rgba(108, 182, 255, 0.7)'
+      : 'rgba(139, 156, 179, 0.55)';
+  ctx.lineWidth = lw(1);
+  ctx.setLineDash([]);
+  // extension ticks from wall to dim line
+  ctx.beginPath();
+  ctx.moveTo(a.x + tx * 0.2, a.y + ty * 0.2);
+  ctx.lineTo(a2.x + tx, a2.y + ty);
+  ctx.moveTo(b.x + tx * 0.2, b.y + ty * 0.2);
+  ctx.lineTo(b2.x + tx, b2.y + ty);
+  // dim line
+  ctx.moveTo(a2.x, a2.y);
+  ctx.lineTo(b2.x, b2.y);
+  ctx.stroke();
+
+  // label slightly further out
+  const c = mid(a2, b2);
+  const labelOff = lw(7) * side;
+  const x = c.x + Math.sin(ang) * labelOff;
+  const y = c.y - Math.cos(ang) * labelOff;
+  const pad = lw(2.5);
+  const h = lw(fontPx + 4);
+  ctx.fillStyle = selected
+    ? COLORS.labelSelectedBg
+    : 'rgba(15, 20, 25, 0.82)';
+  ctx.fillRect(x - tw / 2 - pad, y - h / 2, tw + pad * 2, h);
+  ctx.fillStyle = live
+    ? COLORS.draft
+    : selected
+      ? COLORS.labelSelected
+      : '#a8b4c4';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, x, y);
 }
 
-function drawBadge(ctx: CanvasRenderingContext2D, x: number, y: number, text: string): void {
-  ctx.font = `700 ${lw(16)}px system-ui, sans-serif`;
-  const tw = ctx.measureText(text).width;
-  const padX = lw(12);
-  ctx.fillStyle = 'rgba(15, 20, 25, 0.85)';
-  ctx.strokeStyle = COLORS.first;
-  ctx.lineWidth = lw(1.5);
-  const w = tw + padX * 2;
-  const h = lw(28);
-  roundRect(ctx, x - w / 2, y - h / 2, w, h, 8);
-  ctx.fill();
+/** Total length × width (axis-aligned bbox) around all geometry. */
+function drawOverallDimensions(
+  ctx: CanvasRenderingContext2D,
+  model: DrawingModel,
+  pxPerMeter: number,
+): void {
+  const pts: Point[] = [];
+  for (const L of model.loops ?? []) {
+    for (const v of L.vertices) pts.push(v);
+  }
+  for (const v of model.vertices ?? []) pts.push(v);
+  if (model.draftEnd) pts.push(model.draftEnd);
+  if (pts.length < 2) return;
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of pts) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  const w = maxX - minX;
+  const h = maxY - minY;
+  if (w < 4 || h < 4) return;
+
+  const gap = lw(28); // outer ring offset
+  const tick = lw(6);
+  const col = 'rgba(108, 182, 255, 0.65)';
+  const txtCol = '#9ad4ff';
+
+  ctx.strokeStyle = col;
+  ctx.lineWidth = lw(1.1);
+  ctx.setLineDash([]);
+
+  // Bottom: total width
+  const yDim = maxY + gap;
+  ctx.beginPath();
+  ctx.moveTo(minX, maxY + lw(4));
+  ctx.lineTo(minX, yDim + tick);
+  ctx.moveTo(maxX, maxY + lw(4));
+  ctx.lineTo(maxX, yDim + tick);
+  ctx.moveTo(minX, yDim);
+  ctx.lineTo(maxX, yDim);
   ctx.stroke();
-  ctx.fillStyle = COLORS.first;
+  drawDimText(
+    ctx,
+    (minX + maxX) / 2,
+    yDim + lw(10),
+    formatMeters(w / pxPerMeter),
+    txtCol,
+  );
+
+  // Left: total height
+  const xDim = minX - gap;
+  ctx.beginPath();
+  ctx.moveTo(minX - lw(4), minY);
+  ctx.lineTo(xDim - tick, minY);
+  ctx.moveTo(minX - lw(4), maxY);
+  ctx.lineTo(xDim - tick, maxY);
+  ctx.moveTo(xDim, minY);
+  ctx.lineTo(xDim, maxY);
+  ctx.stroke();
+  // rotate text for height? keep horizontal for readability
+  drawDimText(
+    ctx,
+    xDim - lw(12),
+    (minY + maxY) / 2,
+    formatMeters(h / pxPerMeter),
+    txtCol,
+  );
+}
+
+function drawDimText(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  text: string,
+  color: string,
+): void {
+  ctx.font = `600 ${lw(10)}px system-ui, sans-serif`;
+  const tw = ctx.measureText(text).width;
+  const pad = lw(3);
+  const hh = lw(14);
+  ctx.fillStyle = 'rgba(15, 20, 25, 0.88)';
+  ctx.fillRect(x - tw / 2 - pad, y - hh / 2, tw + pad * 2, hh);
+  ctx.fillStyle = color;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, x, y);
@@ -682,14 +801,4 @@ function roundRect(
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
-}
-
-function centroid(verts: Point[]): Point {
-  let x = 0;
-  let y = 0;
-  for (const v of verts) {
-    x += v.x;
-    y += v.y;
-  }
-  return { x: x / verts.length, y: y / verts.length };
 }
