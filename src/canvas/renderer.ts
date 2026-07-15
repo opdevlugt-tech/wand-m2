@@ -31,13 +31,21 @@ export type RenderOptions = {
   selectedVertexIndex: number | null;
   selectedDoorId: string | null;
   popupCornerIndex: number | null;
-  ghostVertices?: Point[] | null;
-  ghostLoopIndex?: number | null;
-  /** Partition candidates while choosing split */
-  partitionOptions?: { a: { x: number; y: number }; b: { x: number; y: number }; label: string }[];
+  /** Original vertices before absorb (or null) */
+  ghostVertices: Point[] | null;
+  ghostLoopIndex: number | null;
+  partitionOptions?: { a: Point; b: Point; label: string }[];
   partitionHoverIndex?: number | null;
-  /** Zoom/pan: geometry in world; view is visual only (meters unchanged). */
+  /** Free partition draft path */
+  partitionPath?: Point[] | null;
   view?: { scale: number; ox: number; oy: number };
+  /** Room badges: per loop issues */
+  roomBadges?: {
+    loopIndex: number;
+    label: string;
+    ok: boolean;
+    warn: string | null;
+  }[];
 };
 
 /** Screen-constant line width under zoom */
@@ -75,6 +83,8 @@ const COLORS = {
   door: '#6cb6ff',
   doorSel: '#ffd166',
   doorSwing: 'rgba(108, 182, 255, 0.35)',
+  partition: '#c792ea',
+  partitionHover: '#ffd166',
 };
 
 export function resizeCanvas(
@@ -239,6 +249,41 @@ export function drawScene(
     if (hi) {
       drawVertex(ctx, p.a, COLORS.doorSel, 5);
       drawVertex(ctx, p.b, COLORS.doorSel, 5);
+    }
+  }
+
+  // Partition free path draft
+  if (opts.partitionPath && opts.partitionPath.length) {
+    const path = opts.partitionPath;
+    for (let i = 0; i < path.length - 1; i++) {
+      strokeSeg(ctx, path[i], path[i + 1], COLORS.partitionHover, 3);
+    }
+    for (const p of path) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, lw(5), 0, Math.PI * 2);
+      ctx.fillStyle = COLORS.partitionHover;
+      ctx.fill();
+    }
+    if (model.draftEnd && path.length) {
+      strokeSeg(ctx, path[path.length - 1], model.draftEnd, COLORS.partition, 2, true);
+    }
+  }
+
+  // Room badges at centroids
+  if (opts.roomBadges) {
+    for (const b of opts.roomBadges) {
+      const L = model.loops[b.loopIndex];
+      if (!L?.vertices.length) continue;
+      let cx = 0;
+      let cy = 0;
+      for (const p of L.vertices) {
+        cx += p.x;
+        cy += p.y;
+      }
+      cx /= L.vertices.length;
+      cy /= L.vertices.length;
+      drawTinyTag(ctx, cx, cy, b.label, b.ok ? undefined : '#ff6b6b');
+      if (b.warn) drawTinyTag(ctx, cx, cy + lw(16), b.warn, '#ffb020');
     }
   }
 
@@ -457,12 +502,19 @@ function drawAngleChip(
   ctx.fillText(text, x, y);
 }
 
-function drawTinyTag(ctx: CanvasRenderingContext2D, x: number, y: number, text: string): void {
+function drawTinyTag(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  text: string,
+  color?: string,
+): void {
   ctx.font = `600 ${lw(10)}px system-ui, sans-serif`;
   const tw = ctx.measureText(text).width;
-  ctx.fillStyle = COLORS.labelBg;
-  ctx.fillRect(x - tw / 2 - lw(3), y - lw(7), tw + lw(6), lw(14));
-  ctx.fillStyle = COLORS.draft;
+  const pad = lw(4);
+  ctx.fillStyle = 'rgba(15,20,25,0.85)';
+  ctx.fillRect(x - tw / 2 - pad, y - lw(8), tw + pad * 2, lw(16));
+  ctx.fillStyle = color ?? COLORS.draft;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, x, y);

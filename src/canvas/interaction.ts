@@ -15,7 +15,11 @@ import {
   type PartitionCandidate,
   planEqualDivision,
   type EqualDivisionPlan,
+  pointInPolygon,
+  pointToWallParam,
+  pointOnSegment,
   splitIntoEqualParts,
+  splitPolygonByPath,
   moveNextForCornerAngle,
   nearPoint,
   pointFromPolar,
@@ -30,6 +34,7 @@ import {
   wallSegments,
   wouldIntersect,
 } from '../geometry/math';
+import { ROOM_CONFIG } from '../config/rooms';
 
 export type InteractionConfig = {
   hitRadius: number;
@@ -57,7 +62,7 @@ function newLoopId(): string {
 function newDoorId(): string {
   return `D${doorSeq++}`;
 }
-const DEFAULT_DOOR_M = 0.9;
+const DEFAULT_DOOR_M = ROOM_CONFIG.defaultDoorWidthM;
 
 export class DrawingController {
   model: DrawingModel = {
@@ -65,6 +70,8 @@ export class DrawingController {
     status: 'idle',
     vertices: [],
     draftEnd: null,
+    partitionPath: null,
+    partitionLoopIndex: null,
   };
   selection: Selection = { kind: 'none' };
   /** Loop index for meetfout absorb ops (committed loop). */
@@ -382,6 +389,44 @@ export class DrawingController {
     return this.patchSelectedDoor({ swing: d.swing === 1 ? -1 : 1 });
   }
 
+  setSelectedRoomType(typeId: string): boolean {
+    const li = this.selectedLoopIndex();
+    if (li === null) return false;
+    this.writeLoop(li, { roomTypeId: typeId });
+    this.cfg.onChange();
+    return true;
+  }
+
+  /** Start free partition drawing on selected (or given) loop. */
+  beginPartitionDraw(loopIndex?: number): boolean {
+    const li = loopIndex ?? this.selectedLoopIndex();
+    if (li === null) return false;
+    const loop = this.model.loops[li];
+    if (!loop || loop.vertices.length < 3) return false;
+    this.model = {
+      ...this.model,
+      status: 'partition',
+      partitionPath: [],
+      partitionLoopIndex: li,
+      draftEnd: null,
+      vertices: [],
+    };
+    this.setSelection({ kind: 'none' });
+    this.cfg.onChange();
+    return true;
+  }
+
+  cancelPartitionDraw(): void {
+    this.model = {
+      ...this.model,
+      status: 'idle',
+      partitionPath: null,
+      partitionLoopIndex: null,
+      draftEnd: null,
+    };
+    this.cfg.onChange();
+  }
+
   private patchSelectedDoor(patch: Partial<Door>): boolean {
     if (this.selection.kind !== 'door') return false;
     const sel = this.selection;
@@ -442,11 +487,15 @@ export class DrawingController {
       id: newLoopId(),
       vertices: split.loopA,
       doors: this.doorOnPartitionWall(split.loopA),
+      roomTypeId: ROOM_CONFIG.defaultTypeId,
+      name: null,
     };
     const loopB: Loop = {
       id: newLoopId(),
       vertices: split.loopB,
       doors: this.doorOnPartitionWall(split.loopB),
+      roomTypeId: ROOM_CONFIG.defaultTypeId,
+      name: null,
     };
     const loops = [
       ...this.model.loops.slice(0, loopIndex),
@@ -478,6 +527,8 @@ export class DrawingController {
       id: newLoopId(),
       vertices: verts,
       doors: this.doorOnPartitionWall(verts),
+      roomTypeId: ROOM_CONFIG.defaultTypeId,
+      name: null,
     }));
     // Only first/last get outer walls without shared door both sides - each strip gets door on one partition edge
     // doorOnPartitionWall puts door on last→first which is the cut for sequential remainders - good enough
@@ -537,7 +588,14 @@ export class DrawingController {
   }
 
   reset(): void {
-    this.model = { loops: [], status: 'idle', vertices: [], draftEnd: null };
+    this.model = {
+      loops: [],
+      status: 'idle',
+      vertices: [],
+      draftEnd: null,
+      partitionPath: null,
+      partitionLoopIndex: null,
+    };
     this.selection = { kind: 'none' };
     this.meetfoutLoopIndex = null;
     this.active = false;
@@ -637,6 +695,12 @@ export class DrawingController {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     const p = this.localPoint(e);
     const { vertices, status } = this.model;
+
+    // Free partition drawing
+    if (status === 'partition' && this.model.partitionLoopIndex !== null) {
+      this.handlePartitionClick(p);
+      return;
+    }
 
     // Continue active chain from last endpoint
     if ((status === 'open' || status === 'drawing') && vertices.length > 0) {
@@ -768,7 +832,13 @@ export class DrawingController {
         return;
       }
       const loopVerts = [...vertices];
-      const loop: Loop = { id: newLoopId(), vertices: loopVerts, doors: [] };
+      const loop: Loop = {
+        id: newLoopId(),
+        vertices: loopVerts,
+        doors: [],
+        roomTypeId: ROOM_CONFIG.defaultTypeId,
+        name: null,
+      };
       const loops = [...this.model.loops, loop];
       const loopIndex = loops.length - 1;
       this.model = {
@@ -776,6 +846,8 @@ export class DrawingController {
         status: 'idle',
         vertices: [],
         draftEnd: null,
+        partitionPath: null,
+        partitionLoopIndex: null,
       };
       this.meetfoutLoopIndex = loopIndex;
       this.setSelection({ kind: 'wall', loopIndex, wallIndex: 0 }, true, false);
@@ -823,6 +895,112 @@ export class DrawingController {
     } else {
       this.model = { ...this.model, status: 'open', draftEnd: null };
     }
+    this.cfg.onChange();
+  }
+
+  private handlePartitionClick(p: Point): void {
+    const li = this.model.partitionLoopIndex;
+    if (li === null) return;
+    const loop = this.model.loops[li];
+    if (!loop) return;
+    const path = [...(this.model.partitionPath ?? [])];
+    const hit = this.worldHitRadius() * 1.4;
+    const onBoundary = pointToWallParam(loop.vertices, p);
+    const snapBoundary =
+      onBoundary &&
+      dist(
+        p,
+        pointOnSegment(
+          loop.vertices[onBoundary.wallIndex],
+          loop.vertices[(onBoundary.wallIndex + 1) % loop.vertices.length],
+          onBoundary.t,
+        ),
+      ) <= hit;
+
+    if (path.length === 0) {
+      if (!snapBoundary || !onBoundary) {
+        this.cfg.onReject();
+        return;
+      }
+      const segs = wallSegments(loop.vertices, true);
+      const seg = segs[onBoundary.wallIndex];
+      const pt = {
+        x: seg.a.x + (seg.b.x - seg.a.x) * onBoundary.t,
+        y: seg.a.y + (seg.b.y - seg.a.y) * onBoundary.t,
+      };
+      this.model = {
+        ...this.model,
+        partitionPath: [pt],
+        draftEnd: null,
+      };
+      this.cfg.onChange();
+      return;
+    }
+
+    // Closing: second boundary hit (different from first)
+    if (snapBoundary && onBoundary && path.length >= 1) {
+      const segs = wallSegments(loop.vertices, true);
+      const seg = segs[onBoundary.wallIndex];
+      const pt = {
+        x: seg.a.x + (seg.b.x - seg.a.x) * onBoundary.t,
+        y: seg.a.y + (seg.b.y - seg.a.y) * onBoundary.t,
+      };
+      if (dist(pt, path[0]) < hit * 1.5 && path.length < 2) {
+        this.cfg.onReject();
+        return;
+      }
+      // If only one point so far, need at least end on other wall
+      if (path.length === 1 && dist(pt, path[0]) < 8) {
+        this.cfg.onReject();
+        return;
+      }
+      const full = [...path, pt];
+      const result = splitPolygonByPath(loop.vertices, full);
+      if (!result) {
+        this.cfg.onReject();
+        return;
+      }
+      const loopA: Loop = {
+        id: newLoopId(),
+        vertices: result.loopA,
+        doors: this.doorOnPartitionWall(result.loopA),
+        roomTypeId: loop.roomTypeId ?? ROOM_CONFIG.defaultTypeId,
+        name: null,
+      };
+      const loopB: Loop = {
+        id: newLoopId(),
+        vertices: result.loopB,
+        doors: this.doorOnPartitionWall(result.loopB),
+        roomTypeId: ROOM_CONFIG.defaultTypeId,
+        name: null,
+      };
+      // redistribute original doors roughly: keep on loop that contains wall midpoint
+      const loops = [
+        ...this.model.loops.slice(0, li),
+        loopA,
+        loopB,
+        ...this.model.loops.slice(li + 1),
+      ];
+      this.model = {
+        ...this.model,
+        loops,
+        status: 'idle',
+        partitionPath: null,
+        partitionLoopIndex: null,
+        draftEnd: null,
+      };
+      this.setSelection({ kind: 'wall', loopIndex: li, wallIndex: 0 }, true, false);
+      this.cfg.onChange();
+      return;
+    }
+
+    // Intermediate corner: prefer inside polygon
+    if (!pointInPolygon(p, loop.vertices) && !snapBoundary) {
+      this.cfg.onReject();
+      return;
+    }
+    path.push({ ...p });
+    this.model = { ...this.model, partitionPath: path, draftEnd: null };
     this.cfg.onChange();
   }
 

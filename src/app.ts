@@ -2,11 +2,13 @@ import type { DrawingModel, Point } from './geometry/types';
 import {
   absorbErrorAtCorner,
   cornerAngleAt,
+  evaluateRoom,
   formatArea,
   formatDegrees,
   isCanonicalAngle,
   lengthM,
   listNonCanonicalCorners,
+  polygonAreaM2,
   totalLoopsAreaM2,
   type InteriorExterior,
   type PartitionCandidate,
@@ -16,9 +18,12 @@ import { drawScene, resizeCanvas } from './canvas/renderer';
 import { detectLang, LANGS, setStoredLang, t, type Lang } from './i18n';
 import {
   DEFAULT_VIEW,
+  fitViewToPoints,
   type ViewTransform,
+  wheelZoomFactor,
   zoomAt,
 } from './geometry/view';
+import { ROOM_CONFIG, getRoomType } from './config/rooms';
 
 const HIT = 16;
 const CLOSE = 22;
@@ -63,6 +68,10 @@ export function boot(root: HTMLElement): void {
   const doorSwingBtn = root.querySelector<HTMLButtonElement>('#door-swing');
   const labelDoor = root.querySelector<HTMLElement>('#label-door');
   const splitLoopBtn = root.querySelector<HTMLButtonElement>('#split-loop');
+  const partitionDrawBtn = root.querySelector<HTMLButtonElement>('#partition-draw');
+  const roomTypeSelect = root.querySelector<HTMLSelectElement>('#room-type');
+  const roomTypeField = root.querySelector<HTMLElement>('#room-type-field');
+  const labelRoomType = root.querySelector<HTMLElement>('#label-room-type');
   const splitPopup = root.querySelector<HTMLElement>('#split-popup');
   const splitKicker = root.querySelector<HTMLElement>('#split-kicker');
   const splitTitle = root.querySelector<HTMLElement>('#split-popup-title');
@@ -117,6 +126,10 @@ export function boot(root: HTMLElement): void {
     !doorSwingBtn ||
     !labelDoor ||
     !splitLoopBtn ||
+    !partitionDrawBtn ||
+    !roomTypeSelect ||
+    !roomTypeField ||
+    !labelRoomType ||
     !splitPopup ||
     !splitKicker ||
     !splitTitle ||
@@ -184,6 +197,21 @@ export function boot(root: HTMLElement): void {
 
   function syncZoomLabel(): void {
     zoomResetBtn!.textContent = `${Math.round(view.scale * 100)}%`;
+    zoomResetBtn!.title = 'Dubbelklik canvas of Fit = passend maken';
+  }
+
+  function fitView(): void {
+    const pts: Point[] = [];
+    for (const L of controller.model.loops) pts.push(...L.vertices);
+    pts.push(...controller.model.vertices);
+    if (controller.model.draftEnd) pts.push(controller.model.draftEnd);
+    if (!pts.length) {
+      view = { ...DEFAULT_VIEW };
+    } else {
+      view = fitViewToPoints(pts, cssW, cssH, 56);
+    }
+    syncZoomLabel();
+    paint();
   }
 
   function applyStaticI18n(): void {
@@ -373,7 +401,35 @@ export function boot(root: HTMLElement): void {
         : undefined,
       partitionHoverIndex:
         splitState?.mode === 'free' ? splitState.freeHover : null,
+      partitionPath: controller.model.partitionPath,
+      roomBadges: buildRoomBadges(model),
       view,
+    });
+  }
+
+  function buildRoomBadges(model: DrawingModel) {
+    const ppm = getPxPerMeter();
+    return model.loops.map((L, i) => {
+      const rt = getRoomType(L.roomTypeId);
+      const area = polygonAreaM2(L.vertices, ppm);
+      const doors = L.doors?.length ?? 0;
+      const { underMinArea, missingDoor } = evaluateRoom(
+        area,
+        doors,
+        rt.minAreaM2,
+        rt.requireDoor,
+        ROOM_CONFIG.minDoorsPerRoom,
+      );
+      const ok = !underMinArea && !missingDoor;
+      let warn: string | null = null;
+      if (underMinArea) warn = `<${rt.minAreaM2} m²`;
+      else if (missingDoor) warn = 'geen deur';
+      return {
+        loopIndex: i,
+        label: `${rt.code} ${area.toFixed(1)} m²`,
+        ok,
+        warn,
+      };
     });
   }
 
@@ -578,7 +634,18 @@ export function boot(root: HTMLElement): void {
       controller.selection.kind === 'wall' && controller.selection.loopIndex !== null;
     addDoorBtn!.disabled = !wallOnLoop;
     const li = controller.selectedLoopIndex();
-    splitLoopBtn!.disabled = li === null || (controller.model.loops[li]?.vertices.length ?? 0) < 4;
+    splitLoopBtn!.disabled = li === null || (controller.model.loops[li]?.vertices.length ?? 0) < 3;
+    partitionDrawBtn!.disabled =
+      li === null || (controller.model.loops[li]?.vertices.length ?? 0) < 3;
+    const hasRoom = li !== null;
+    roomTypeSelect!.disabled = !hasRoom;
+    if (hasRoom) {
+      const L = controller.model.loops[li!];
+      roomTypeSelect!.value = L.roomTypeId ?? ROOM_CONFIG.defaultTypeId;
+      roomTypeField!.classList.add('active');
+    } else {
+      roomTypeField!.classList.remove('active');
+    }
     if (!door) {
       doorWidthInput!.value = '';
       doorWidthInput!.disabled = true;
@@ -1035,6 +1102,23 @@ export function boot(root: HTMLElement): void {
     paint();
   });
   splitLoopBtn.addEventListener('click', () => openSplitPanel());
+  partitionDrawBtn.addEventListener('click', () => {
+    if (controller.model.status === 'partition') {
+      controller.cancelPartitionDraw();
+      statusEl!.textContent = tr.statusIdle;
+      paint();
+      return;
+    }
+    if (!controller.beginPartitionDraw()) return;
+    statusEl!.textContent = tr.statusPartitionDraw;
+    paint();
+  });
+  roomTypeSelect.addEventListener('change', () => {
+    const v = roomTypeSelect.value;
+    if (!controller.setSelectedRoomType(v)) return;
+    updateHud(controller.model);
+    paint();
+  });
   splitCancel.addEventListener('click', () => {
     closeSplitPanel();
     updateHud(controller.model);
@@ -1049,13 +1133,9 @@ export function boot(root: HTMLElement): void {
     paint();
   }
 
-  zoomInBtn.addEventListener('click', () => applyZoom(1.2));
-  zoomOutBtn.addEventListener('click', () => applyZoom(1 / 1.2));
-  zoomResetBtn.addEventListener('click', () => {
-    view = { ...DEFAULT_VIEW };
-    syncZoomLabel();
-    paint();
-  });
+  zoomInBtn.addEventListener('click', () => applyZoom(1.25));
+  zoomOutBtn.addEventListener('click', () => applyZoom(1 / 1.25));
+  zoomResetBtn.addEventListener('click', () => fitView());
 
   canvas.addEventListener(
     'wheel',
@@ -1064,17 +1144,42 @@ export function boot(root: HTMLElement): void {
       const rect = canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
-      const factor = e.deltaY > 0 ? 1 / 1.12 : 1.12;
+      const factor = wheelZoomFactor(e.deltaY, e.deltaMode);
       applyZoom(factor, sx, sy);
     },
     { passive: false },
   );
 
-  // Middle mouse or Alt+drag = pan (meters unchanged)
+  canvas.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    fitView();
+  });
+
+  // Middle mouse or Space+drag or Alt+drag = pan
+  let spacePan = false;
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && !e.repeat) {
+      spacePan = true;
+      canvas.style.cursor = 'grab';
+    }
+    if (e.key === 'Escape' && controller.model.status === 'partition') {
+      controller.cancelPartitionDraw();
+      updateHud(controller.model);
+      paint();
+    }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.code === 'Space') {
+      spacePan = false;
+      canvas.style.cursor = '';
+    }
+  });
+
   canvas.addEventListener('pointerdown', (e) => {
-    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+    if (e.button === 1 || (e.button === 0 && (e.altKey || spacePan))) {
       e.preventDefault();
       panDrag = { x: e.clientX, y: e.clientY, ox: view.ox, oy: view.oy };
+      canvas.style.cursor = 'grabbing';
       canvas.setPointerCapture(e.pointerId);
     }
   });
@@ -1090,6 +1195,7 @@ export function boot(root: HTMLElement): void {
   canvas.addEventListener('pointerup', (e) => {
     if (panDrag) {
       panDrag = null;
+      canvas.style.cursor = spacePan ? 'grab' : '';
       try {
         canvas.releasePointerCapture(e.pointerId);
       } catch {
@@ -1098,6 +1204,58 @@ export function boot(root: HTMLElement): void {
     }
   });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // Pinch zoom (two pointers)
+  const pinch = new Map<number, { x: number; y: number }>();
+  let pinchState: { dist: number; scale: number; cx: number; cy: number } | null = null;
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') {
+      pinch.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch.size === 2) {
+        const pts = [...pinch.values()];
+        const dx = pts[0].x - pts[1].x;
+        const dy = pts[0].y - pts[1].y;
+        const rect = canvas.getBoundingClientRect();
+        pinchState = {
+          dist: Math.hypot(dx, dy) || 1,
+          scale: view.scale,
+          cx: (pts[0].x + pts[1].x) / 2 - rect.left,
+          cy: (pts[0].y + pts[1].y) / 2 - rect.top,
+        };
+      }
+    }
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!pinch.has(e.pointerId)) return;
+    pinch.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch.size === 2 && pinchState) {
+      const pts = [...pinch.values()];
+      const dx = pts[0].x - pts[1].x;
+      const dy = pts[0].y - pts[1].y;
+      const d = Math.hypot(dx, dy) || 1;
+      const factor = d / pinchState.dist;
+      const next = Math.min(8, Math.max(0.2, pinchState.scale * factor));
+      const w = {
+        x: (pinchState.cx - view.ox) / view.scale,
+        y: (pinchState.cy - view.oy) / view.scale,
+      };
+      view = {
+        scale: next,
+        ox: pinchState.cx - w.x * next,
+        oy: pinchState.cy - w.y * next,
+      };
+      syncZoomLabel();
+      paint();
+    }
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    pinch.delete(e.pointerId);
+    if (pinch.size < 2) pinchState = null;
+  });
+  canvas.addEventListener('pointercancel', (e) => {
+    pinch.delete(e.pointerId);
+    if (pinch.size < 2) pinchState = null;
+  });
 
   doorWidthInput.addEventListener('change', () => applyTypedDoorWidth());
   doorWidthInput.addEventListener('keydown', (e) => {

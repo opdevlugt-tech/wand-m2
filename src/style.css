@@ -150,8 +150,26 @@ body {
   box-shadow: 0 0 0 1px rgba(255, 176, 32, 0.35);
 }
 
-.door-field.active {
+.room-type-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: #8b9bb0;
+}
+.room-type-field select {
+  background: #1a2330;
+  border: 1px solid #2a3848;
+  color: #e7eef7;
+  border-radius: 8px;
+  padding: 0.25rem 0.4rem;
+  font: inherit;
+}
+.room-type-field.active {
   color: #6cb6ff;
+}
+.room-type-field.active select {
+  border-color: #6cb6ff;
 }
 
 .door-field.active input {

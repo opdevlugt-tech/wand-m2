@@ -27,6 +27,8 @@ export type Dict = {
   statusClosedOdd: (area: string, odds: string) => string;
   statusMeetfoutAt: (n: number) => string;
   statusDoor: (w: string) => string;
+  statusIdle: string;
+  statusPartitionDraw: string;
   wallM: string;
   doorM: string;
   addDoor: string;
@@ -84,6 +86,9 @@ export const translations: Record<Lang, Dict> = {
     statusClosedOdd: (area, odds) => `Gesloten · ${area} · afwijkend: ${odds}`,
     statusMeetfoutAt: (n) => `Meetfout bij hoek ${n} · overige naar 45°/90°/135°`,
     statusDoor: (w) => `Deur ${w} · sleep om te verplaatsen · typ breedte`,
+    statusIdle: 'Klaar. Selecteer kamer · type · Deel… of ✂ Teken.',
+    statusPartitionDraw:
+      'Scheiding: 1e klik op buitenmuur · hoeken binnen · laatste klik op andere muur. Esc = stop.',
     wallM: 'Muur (m)',
     doorM: 'Deur (m)',
     addDoor: '+ Deur',
@@ -128,7 +133,7 @@ export const translations: Record<Lang, Dict> = {
     residual: 'restfout',
     hoverCorner: (n) => `Hover: live vorm met restfout bij hoek ${n}`,
     hint:
-      'Zoom: muiswiel of +/− (maten blijven). Pan: middelmuis of Alt+sleep. Deur: sleep langs muur. Deel… = scheidingswand.',
+      'Kamers: type 1p/2p. Deel… ÷2/3/4 of ✂ Teken (schuine wanden). Zoom: wiel · pinch · Fit · spatie+sleep. Maten blijven.',
   },
   en: {
     pageTitle: 'Wall-m²',
@@ -141,9 +146,12 @@ export const translations: Record<Lang, Dict> = {
     statusClosedWall: (area) => `${area} · type wall length (m) to resize line`,
     statusClosedCorner: (area, deg) => `Closed · ${area} · interior ${deg}`,
     statusClosedOdd: (area, odds) => `Closed · ${area} · off-grid: ${odds}`,
-    statusMeetfoutAt: (n) => `Error at corner ${n} · others → 45°/90°/135°`,
-    statusDoor: (w) => `Door ${w} · drag to move · type width`,
-    wallM: 'Wall (m)',
+    statusMeetfoutAt: (n) => `Error at corner ${n} · rest → 45°/90°/135°`,
+        statusDoor: (w) => `Door ${w} · drag · type width`,
+        statusIdle: 'Ready. Select room · type · Split… or ✂ Draw.',
+        statusPartitionDraw:
+          'Partition: 1st click on outer wall · corners inside · last click on other wall. Esc = cancel.',
+        wallM: 'Wall (m)',
     doorM: 'Door (m)',
     addDoor: '+ Door',
     removeDoor: 'Remove door',
@@ -202,6 +210,8 @@ export const translations: Record<Lang, Dict> = {
     statusClosedOdd: (area, odds) => `Cerrado · ${area} · fuera de rejilla: ${odds}`,
     statusMeetfoutAt: (n) => `Error en esquina ${n} · resto → 45°/90°/135°`,
     statusDoor: (w) => `Puerta ${w} · arrastra · escribe ancho`,
+    statusIdle: 'Listo.',
+    statusPartitionDraw: 'Tabique libre: muro → esquinas → muro. Esc = cancelar.',
     wallM: 'Pared (m)',
     doorM: 'Puerta (m)',
     addDoor: '+ Puerta',
@@ -261,6 +271,8 @@ export const translations: Record<Lang, Dict> = {
     statusClosedOdd: (area, odds) => `Zamknięte · ${area} · poza siatką: ${odds}`,
     statusMeetfoutAt: (n) => `Błąd przy rogu ${n} · reszta → 45°/90°/135°`,
     statusDoor: (w) => `Drzwi ${w} · przeciągnij · wpisz szerokość`,
+    statusIdle: 'Gotowe.',
+    statusPartitionDraw: 'Ściana: mur → narożniki → mur. Esc = stop.',
     wallM: 'Ściana (m)',
     doorM: 'Drzwi (m)',
     addDoor: '+ Drzwi',
@@ -320,6 +332,8 @@ export const translations: Record<Lang, Dict> = {
     statusClosedOdd: (area, odds) => `Замкнуто · ${area} · вне сетки: ${odds}`,
     statusMeetfoutAt: (n) => `Ошибка в углу ${n} · остальные → 45°/90°/135°`,
     statusDoor: (w) => `Дверь ${w} · перетащите · ширина`,
+    statusIdle: 'Готово.',
+    statusPartitionDraw: 'Перегородка: стена → углы → стена. Esc = отмена.',
     wallM: 'Стена (м)',
     doorM: 'Дверь (м)',
     addDoor: '+ Дверь',

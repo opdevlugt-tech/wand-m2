@@ -28,6 +28,7 @@ import {
   splitPolygonByPartition,
   planEqualDivision,
   splitIntoEqualParts,
+  splitPolygonByPath,
 } from '../src/geometry/math';
 import type { Point } from '../src/geometry/types';
 
@@ -224,6 +225,19 @@ describe('partition split', () => {
       const sum = parts!.reduce((s, p) => s + polygonAreaM2(p, 1), 0);
       expect(sum).toBeCloseTo(10000, 0);
     }
+  });
+
+  it('split by path with middle corner preserves area', () => {
+    const path = [
+      { x: 50, y: 0 },
+      { x: 60, y: 40 },
+      { x: 50, y: 100 },
+    ];
+    const split = splitPolygonByPath(square, path);
+    expect(split).not.toBeNull();
+    const sum =
+      polygonAreaM2(split!.loopA, 1) + polygonAreaM2(split!.loopB, 1);
+    expect(sum).toBeCloseTo(10000, -1);
   });
 });
 

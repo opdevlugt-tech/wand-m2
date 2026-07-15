@@ -1219,3 +1219,92 @@ function centroidOf(verts: Point[]): Point {
   const n = Math.max(1, verts.length);
   return { x: x / n, y: y / n };
 }
+
+/**
+ * Split polygon by a polyline path. path[0] and path[last] must lie on the
+ * boundary; intermediate points may be free (corners / schuine wanden).
+ */
+export function splitPolygonByPath(
+  vertices: Point[],
+  path: Point[],
+): { loopA: Point[]; loopB: Point[] } | null {
+  if (path.length < 2 || vertices.length < 3) return null;
+  const start = pointToWallParam(vertices, path[0]);
+  const end = pointToWallParam(vertices, path[path.length - 1]);
+  if (!start || !end) return null;
+
+  // Build expanded ring with start/end points (reuse partition insert logic)
+  const split = splitPolygonByPartition(
+    vertices,
+    start.wallIndex,
+    start.t,
+    end.wallIndex,
+    end.t,
+  );
+  if (!split) return null;
+
+  // If path is just two points, done
+  if (path.length === 2) return split;
+
+  // Replace the direct partition edge with the polyline corners.
+  // loopA walks start→end along boundary: last edge is end→start (partition).
+  // Insert path intermediates before closing.
+  const middles = path.slice(1, -1).map((p) => ({ ...p }));
+  if (!middles.length) return split;
+
+  const inject = (loop: Point[], reverseMids: boolean): Point[] => {
+    // loop is [start, ...boundary..., end] without repeating start
+    // We need [start, ...mids..., end, ...boundary rest already there]
+    // Actually split loops are [A ... B] where partition is B→A when closed.
+    // So vertices = [A, boundary to B..., B]; closed wall last→first is B→A.
+    // Want B→A to become B→ reverse(mids) → A or A→ mids → B.
+    // For loopA = walk(A→B along boundary): partition edge is from B back to A.
+    // Path was A→mids→B, so from B to A along path is reverse(mids).
+    // New verts: [A, ...boundary..., B, ...reverse(mids)...] without duplicating A at end.
+    if (loop.length < 2) return loop;
+    const m = reverseMids ? [...middles].reverse() : [...middles];
+    return [...loop, ...m];
+  };
+
+  // loopA: A..B on boundary, partition B→A via reverse path
+  // loopB: B..A on boundary, partition A→B via path
+  // After inject: loopA = [A..B, rev mids], closed B→rev→A ✓
+  // loopB from walk(B,A) = [B..A]; inject mids not reverse: [B..A, mids] closed A→mids→B wrong order
+  // For loopB we need [B, mids reversed? Path A→mids→B means from A to B is mids, from B to A is reverse.
+  // loopB walk B to A: verts [B ... A], partition A→B should be A→mids→B so inject mids at end: [B...A, mids] closes A→mids→...→B? last mid to B: need mids then B is first. So [B, ...mids reverse from B side]
+  // Path: A, m1, m2, B. From A to B: m1,m2. From B to A: m2,m1.
+  // loopA [A..B] + [m2,m1] → A..B,m2,m1 close m1→A — wrong, need B→m2→m1→A so [A..B, m2, m1] close last m1 to A. Path reverse from B is m2,m1 yes B→m2→m1→A if m1 near A. Good.
+  // loopB [B..A] + [m1,m2] → B..A,m1,m2 close m2→B. From A along m1,m2 to B: A→m1→m2→B. Good.
+
+  const loopA = inject(split.loopA, true);
+  const loopB = inject(split.loopB, false);
+
+  if (loopA.length < 3 || loopB.length < 3) return null;
+  if (polygonSelfIntersects(loopA, true) || polygonSelfIntersects(loopB, true)) return null;
+  // areas should be positive and sum roughly original
+  return { loopA, loopB };
+}
+
+export type RoomIssue = {
+  loopIndex: number;
+  areaM2: number;
+  doorCount: number;
+  underMinArea: boolean;
+  missingDoor: boolean;
+  roomTypeId: string | null;
+  minAreaM2: number;
+};
+
+/** Validate rooms against configurable rules (import config at call site to avoid cycle). */
+export function evaluateRoom(
+  areaM2: number,
+  doorCount: number,
+  minAreaM2: number,
+  requireDoor: boolean,
+  minDoors = 1,
+): { underMinArea: boolean; missingDoor: boolean } {
+  return {
+    underMinArea: minAreaM2 > 0 && areaM2 + 1e-6 < minAreaM2,
+    missingDoor: requireDoor && doorCount < minDoors,
+  };
+}

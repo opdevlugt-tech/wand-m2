@@ -6,46 +6,48 @@ export type Segment = {
 };
 
 /**
- * hinge: 'L' = scharnier bij openA (begin opening langs muur-richting),
- *        'R' = scharnier bij openB.
- * swing: 1 = 90° naar links t.o.v. muur-richting (CCW),
- *       -1 = 90° naar rechts (CW).
+ * hinge: 'L' = scharnier bij openA, 'R' = openB.
+ * swing: 1 = CCW 90°, -1 = CW 90°.
  */
 export type Door = {
   id: string;
   wallIndex: number;
-  /** Center of door along wall, 0 = start vertex, 1 = end vertex. */
   t: number;
-  /** Clear opening width in meters. */
   widthM: number;
   hinge: 'L' | 'R';
   swing: 1 | -1;
 };
 
-/** Committed closed polygon (no repeated first vertex). */
+/** Committed room polygon. */
 export type Loop = {
   id: string;
   vertices: Point[];
   doors: Door[];
+  /** Room type id from ROOM_CONFIG (single / double / other). */
+  roomTypeId: string | null;
+  /** Optional free label */
+  name: string | null;
 };
 
-/** Active freehand chain (not yet a loop). */
-export type ActiveStatus = 'idle' | 'open' | 'drawing';
+export type ActiveStatus = 'idle' | 'open' | 'drawing' | 'partition';
 
 export type DrawingModel = {
   loops: Loop[];
   status: ActiveStatus;
-  /** Active open chain corners. */
   vertices: Point[];
   draftEnd: Point | null;
+  /**
+   * Free partition draft: points in world space.
+   * First and last must snap to boundary of partitionLoopIndex.
+   */
+  partitionPath: Point[] | null;
+  partitionLoopIndex: number | null;
 };
 
-/** Selection of a wall, corner, or door. */
 export type Selection =
   | { kind: 'none' }
   | {
       kind: 'wall';
-      /** null = active chain */
       loopIndex: number | null;
       wallIndex: number;
     }
