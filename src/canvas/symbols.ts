@@ -79,7 +79,7 @@ export function drawElectraSymbol(
       drawSocketC(ctx, s, 1, true);
       break;
     case 'socket-double':
-      drawSocketC(ctx, s, 2, false);
+      drawSocketC(ctx, s, 2, true); // dubbel standaard met randaarde
       break;
     case 'socket-quad':
       drawSocketC(ctx, s, 4, true);
@@ -230,8 +230,9 @@ function drawPush(ctx: CanvasRenderingContext2D, s: number): void {
 }
 
 /**
- * Wandcontactdoos (tekening): horizontale lijn + C-vorm(en).
- * pe: extra haakje (beschermingscontact).
+ * Wandcontactdoos (Kenteq tekening): lijn + C-vorm.
+ * pe/randaarde: beschermingscontacten als korte strepen op de C
+ *   (NL-randaarde = zijcontacten).
  */
 function drawSocketC(
   ctx: CanvasRenderingContext2D,
@@ -239,27 +240,46 @@ function drawSocketC(
   count: 1 | 2 | 4,
   pe: boolean,
 ): void {
-  const r = s * 0.22;
-  const startX = -r * (0.6 + count * 0.55);
+  const r = s * 0.26;
+  const gap = r * 1.05;
+  const totalW = (count - 1) * gap;
+  const c0 = -totalW / 2;
+  // toevoer vanaf links
   ctx.beginPath();
-  ctx.moveTo(startX, 0);
-  ctx.lineTo(-r * 0.15, 0);
+  ctx.moveTo(c0 - r * 1.35, 0);
+  ctx.lineTo(c0 - r * 0.55, 0);
   ctx.stroke();
+
   for (let i = 0; i < count; i++) {
-    const cx = r * 0.15 + i * r * 0.95;
+    const cx = c0 + i * gap;
+    // C opening naar rechts (Kenteq tekening)
     ctx.beginPath();
-    // C opening naar rechts
-    ctx.arc(cx, 0, r * 0.55, -Math.PI * 0.75, Math.PI * 0.75, false);
+    ctx.arc(cx, 0, r * 0.62, -Math.PI * 0.72, Math.PI * 0.72, false);
     ctx.stroke();
-  }
-  if (pe) {
-    const cx = r * 0.15 + (count - 1) * r * 0.95;
-    // PE-haakje rechts van laatste C
-    ctx.beginPath();
-    ctx.moveTo(cx + r * 0.7, -r * 0.25);
-    ctx.lineTo(cx + r * 1.05, -r * 0.25);
-    ctx.lineTo(cx + r * 1.05, r * 0.25);
-    ctx.stroke();
+
+    if (pe) {
+      // Randaarde: twee zijcontacten (boven + onder in de opening van de C)
+      const ox = cx + r * 0.28;
+      const len = r * 0.42;
+      ctx.beginPath();
+      ctx.moveTo(ox, -r * 0.38);
+      ctx.lineTo(ox + len, -r * 0.38);
+      ctx.moveTo(ox, r * 0.38);
+      ctx.lineTo(ox + len, r * 0.38);
+      ctx.stroke();
+      // optioneel: korte aardstreepjes onder het symbool (beschermingsgeleider)
+      if (i === count - 1) {
+        const y = r * 0.95;
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 0.35, y);
+        ctx.lineTo(cx + r * 0.55, y);
+        ctx.moveTo(cx - r * 0.2, y + r * 0.22);
+        ctx.lineTo(cx + r * 0.4, y + r * 0.22);
+        ctx.moveTo(cx - r * 0.05, y + r * 0.42);
+        ctx.lineTo(cx + r * 0.25, y + r * 0.42);
+        ctx.stroke();
+      }
+    }
   }
 }
 
