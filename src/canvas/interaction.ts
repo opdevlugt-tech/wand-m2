@@ -83,6 +83,8 @@ export class DrawingController {
   selection: Selection = { kind: 'none' };
   /** Loop index for meetfout absorb ops (committed loop). */
   meetfoutLoopIndex: number | null = null;
+  /** When false, pointer events ignored (install mode). */
+  enabled = true;
 
   private pointerId: number | null = null;
   private active = false;
@@ -874,6 +876,7 @@ export class DrawingController {
   }
 
   private onDown = (e: PointerEvent): void => {
+    if (!this.enabled) return;
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     const p = this.localPoint(e);
     const { vertices, status } = this.model;
@@ -976,6 +979,7 @@ export class DrawingController {
   };
 
   private onMove = (e: PointerEvent): void => {
+    if (!this.enabled) return;
     const p = this.localPoint(e);
 
     if (this.dragDoor) {
@@ -1203,6 +1207,7 @@ export class DrawingController {
   }
 
   private onUp = (e: PointerEvent): void => {
+    if (!this.enabled) return;
     if (this.dragDoor) {
       this.dragDoor = null;
       this.active = false;

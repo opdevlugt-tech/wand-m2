@@ -974,3 +974,48 @@ body {
     max-height: 45dvh;
   }
 }
+
+.hidden { display: none !important; }
+.symbol-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+.symbol-btn {
+  appearance: none;
+  border: 1px solid #2a3848;
+  background: #151c26;
+  border-radius: 8px;
+  padding: 0.2rem 0.3rem 0.15rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  min-width: 3.1rem;
+}
+.symbol-btn:hover { border-color: #6cb6ff; }
+.symbol-btn.active {
+  border-color: #ffd166;
+  background: #241c10;
+  box-shadow: 0 0 0 1px rgba(255, 209, 102, 0.35);
+}
+.symbol-canvas { display: block; width: 40px; height: 40px; }
+.symbol-lab {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #8b9bb0;
+  letter-spacing: 0.02em;
+}
+.symbol-btn.active .symbol-lab { color: #ffd166; }
+.electra-group { max-width: 100%; }
+.install-input {
+  background: #1a2330;
+  border: 1px solid #2a3848;
+  color: #e7eef7;
+  border-radius: 8px;
+  padding: 0.3rem 0.45rem;
+  font: inherit;
+  width: 9rem;
+}

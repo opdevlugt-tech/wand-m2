@@ -1,7 +1,8 @@
 /**
- * Installatie-componenten — 3 categorieën.
- * Fase 2: catalogus + plaatsen op plattegrond.
+ * Installatie-componenten — start: Elektrische installatie (NL-norm pictogrammen).
+ * Water/afvoer later per categorie.
  */
+import type { ElectraSymbolId } from '../canvas/symbols';
 
 export type InstallCategory = 'electric' | 'water' | 'drain';
 
@@ -9,10 +10,11 @@ export type InstallComponentDef = {
   id: string;
   category: InstallCategory;
   labelNl: string;
-  /** Korte code op tekening */
+  /** Korte code in lijsten */
   code: string;
-  /** Kleur (stroke/fill accent) */
   color: string;
+  /** Electra: welk NEN-achtig pictogram */
+  symbol: ElectraSymbolId;
 };
 
 export const INSTALL_CATEGORIES: {
@@ -25,101 +27,79 @@ export const INSTALL_CATEGORIES: {
   { id: 'drain', labelNl: 'Afvoerinstallatie', short: 'Afvoer' },
 ];
 
-/** Catalogus per categorie (uitbreidbaar). */
+/** Catalogus — Electra eerst volledig; water/afvoer placeholders. */
 export const INSTALL_CATALOG: InstallComponentDef[] = [
-  // Elektrisch
   {
     id: 'el-socket',
     category: 'electric',
     labelNl: 'Wandcontactdoos',
     code: 'WCD',
-    color: '#ffd166',
+    color: '#e8eef7',
+    symbol: 'socket',
+  },
+  {
+    id: 'el-socket-2',
+    category: 'electric',
+    labelNl: 'Wandcontactdoos dubbel',
+    code: 'WCD2',
+    color: '#e8eef7',
+    symbol: 'socket-double',
   },
   {
     id: 'el-switch',
     category: 'electric',
-    labelNl: 'Schakelaar',
-    code: 'SCH',
-    color: '#ffd166',
+    labelNl: 'Schakelaar (1-polig)',
+    code: 'S1',
+    color: '#e8eef7',
+    symbol: 'switch',
+  },
+  {
+    id: 'el-switch-2',
+    category: 'electric',
+    labelNl: 'Schakelaar (wissel/dubbel)',
+    code: 'S2',
+    color: '#e8eef7',
+    symbol: 'switch-double',
   },
   {
     id: 'el-light',
     category: 'electric',
-    labelNl: 'Lichtpunt',
+    labelNl: 'Lichtpunt plafond',
     code: 'LP',
-    color: '#ffd166',
+    color: '#e8eef7',
+    symbol: 'light',
+  },
+  {
+    id: 'el-light-wall',
+    category: 'electric',
+    labelNl: 'Wandlichtpunt',
+    code: 'WL',
+    color: '#e8eef7',
+    symbol: 'light-wall',
   },
   {
     id: 'el-panel',
     category: 'electric',
     labelNl: 'Groepenkast',
     code: 'GK',
-    color: '#ff9f43',
+    color: '#ffd166',
+    symbol: 'panel',
   },
   {
     id: 'el-data',
     category: 'electric',
-    labelNl: 'Data / UTP',
+    labelNl: 'Data-aansluiting',
     code: 'DATA',
     color: '#6cb6ff',
-  },
-  // Water
-  {
-    id: 'wa-cold',
-    category: 'water',
-    labelNl: 'Koudwaterpunt',
-    code: 'KW',
-    color: '#6cb6ff',
+    symbol: 'data',
   },
   {
-    id: 'wa-hot',
-    category: 'water',
-    labelNl: 'Warmwaterpunt',
-    code: 'WW',
-    color: '#ff6b6b',
-  },
-  {
-    id: 'wa-mixer',
-    category: 'water',
-    labelNl: 'Mengpunt',
-    code: 'MP',
-    color: '#c8a2ff',
-  },
-  {
-    id: 'wa-boiler',
-    category: 'water',
-    labelNl: 'Boiler / geiser',
-    code: 'BLR',
-    color: '#ff8fab',
-  },
-  // Afvoer
-  {
-    id: 'dr-floor',
-    category: 'drain',
-    labelNl: 'Vloerput',
-    code: 'VP',
-    color: '#8b9bb0',
-  },
-  {
-    id: 'dr-sink',
-    category: 'drain',
-    labelNl: 'Sifon / wastafel-afvoer',
-    code: 'SIF',
-    color: '#8b9bb0',
-  },
-  {
-    id: 'dr-toilet',
-    category: 'drain',
-    labelNl: 'Toilet-aansluiting',
-    code: 'WC',
-    color: '#a0aec0',
-  },
-  {
-    id: 'dr-stack',
-    category: 'drain',
-    labelNl: 'Standleiding',
-    code: 'SL',
-    color: '#718096',
+    id: 'el-thermo',
+    category: 'electric',
+    labelNl: 'Ruimtethermostaat',
+    code: 'RT',
+    color: '#e8eef7',
+    symbol: 'thermostat',
   },
 ];
 
@@ -136,12 +116,15 @@ export type PlacedInstall = {
   defId: string;
   x: number;
   y: number;
-  /** Optioneel gekoppeld aan loop-id */
   loopId: string | null;
   note: string;
+  /** Rotatie in graden (toekomst) */
+  rot?: number;
 };
 
 let placeSeq = 1;
 export function newPlaceId(): string {
   return `I${placeSeq++}`;
 }
+
+export const INSTALL_HIT_R = 14;

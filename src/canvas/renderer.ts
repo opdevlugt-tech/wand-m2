@@ -20,6 +20,8 @@ import {
   findPartnerWall,
 } from '../geometry/math';
 import { ROOM_CONFIG } from '../config/rooms';
+import { getInstallDef } from '../config/installations';
+import { drawElectraSymbol } from './symbols';
 
 export type RenderOptions = {
   pxPerMeter: number;
@@ -51,8 +53,8 @@ export type RenderOptions = {
   installations?: {
     x: number;
     y: number;
-    code: string;
-    color: string;
+    defId: string;
+    selected?: boolean;
   }[];
 };
 
@@ -297,10 +299,15 @@ export function drawScene(
     }
   }
 
-  // Installatie-componenten
+  // Installatie-componenten (NL-norm pictogrammen)
   if (opts.installations?.length) {
     for (const inst of opts.installations) {
-      drawInstallSymbol(ctx, inst.x, inst.y, inst.code, inst.color);
+      const def = getInstallDef(inst.defId);
+      const symbol = def?.symbol ?? 'socket';
+      drawElectraSymbol(ctx, symbol, inst.x, inst.y, 22 / Math.max(0.25, drawScale), {
+        selected: !!inst.selected,
+        strokeScale: 1 / Math.max(0.25, drawScale),
+      });
     }
   }
 
@@ -603,28 +610,6 @@ function drawRoomAreaBadge(
     ctx.fillStyle = '#ffb020';
     ctx.fillText(warn, x, yy);
   }
-}
-
-function drawInstallSymbol(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  code: string,
-  color: string,
-): void {
-  const r = lw(9);
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(15,20,25,0.9)';
-  ctx.fill();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = lw(1.5);
-  ctx.stroke();
-  ctx.font = `700 ${lw(7)}px system-ui, sans-serif`;
-  ctx.fillStyle = color;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(code, x, y);
 }
 
 function drawGridWorld(

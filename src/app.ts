@@ -25,7 +25,7 @@ import {
 } from './geometry/view';
 import { ROOM_CONFIG, ROOM_NAME_PRESETS_NL, getRoomType, roomDisplayName } from './config/rooms';
 import { findPartnerWall } from './geometry/math';
-import { getInstallDef, type PlacedInstall } from './config/installations';
+import { getInstallDef, newPlaceId, INSTALL_HIT_R, type PlacedInstall } from './config/installations';
 import {
   AUTOSAVE_KEY,
   createPlanDoc,
@@ -33,7 +33,7 @@ import {
   upsertPlan,
   type PlanDocument,
 } from './storage/plans';
-import { bootInstallPanel } from './install-panel';
+import { bootElectraPalette } from './electra-ui';
 
 const HIT = 16;
 const CLOSE = 22;
@@ -102,10 +102,12 @@ export function boot(root: HTMLElement): void {
   const loadFile = root.querySelector<HTMLInputElement>('#load-file');
   const resetBtn = root.querySelector<HTMLButtonElement>('#reset');
   const tabDraw = root.querySelector<HTMLButtonElement>('#tab-draw');
-  const tabInstall = root.querySelector<HTMLButtonElement>('#tab-install');
-  const panelDraw = root.querySelector<HTMLElement>('#panel-draw');
-  const panelInstall = root.querySelector<HTMLElement>('#panel-install');
-  const stage = root.querySelector<HTMLElement>('.stage');
+    const tabInstall = root.querySelector<HTMLButtonElement>('#tab-install');
+    const hudDraw = root.querySelector<HTMLElement>('#hud-draw');
+    const hudInstall = root.querySelector<HTMLElement>('#hud-install');
+    const installDeleteBtn = root.querySelector<HTMLButtonElement>('#install-delete');
+    const installStatus = root.querySelector<HTMLElement>('#install-status');
+    const stage = root.querySelector<HTMLElement>('.stage');
   const popup = root.querySelector<HTMLElement>('#angle-popup');
   const popupLead = root.querySelector<HTMLElement>('#angle-popup-lead');
   const oddList = root.querySelector<HTMLElement>('#popup-odd-list');
@@ -171,10 +173,11 @@ export function boot(root: HTMLElement): void {
     !loadFile ||
     !resetBtn ||
     !tabDraw ||
-    !tabInstall ||
-    !panelDraw ||
-    !panelInstall ||
-    !stage ||
+        !tabInstall ||
+        !hudDraw ||
+        !hudInstall ||
+        !installDeleteBtn ||
+        !stage ||
     !popup ||
     !popupLead ||
     !oddList ||
@@ -330,11 +333,15 @@ export function boot(root: HTMLElement): void {
   }
 
   /** Installaties + bibliotheek-meta voor huidig plan */
-  let installations: PlacedInstall[] = [];
-  let activePlanId: string | null = null;
-  let activePlanName = '';
+    let installations: PlacedInstall[] = [];
+    let activePlanId: string | null = null;
+    let activePlanName = '';
+    let appMode: 'draw' | 'install' = 'draw';
+    let placeToolId: string | null = null;
+    let selectedInstallId: string | null = null;
+    let dragInstall: { id: string; ox: number; oy: number } | null = null;
 
-  const controller = new DrawingController(canvas, {
+    const controller = new DrawingController(canvas, {
     hitRadius: HIT,
     closeRadius: CLOSE,
     minLengthPx: MIN_LEN,
@@ -452,18 +459,15 @@ export function boot(root: HTMLElement): void {
         splitState?.mode === 'free' ? splitState.freeHover : null,
       partitionPath: controller.model.partitionPath,
       roomBadges: buildRoomBadges(model),
-      installations: installations.map((p) => {
-        const def = getInstallDef(p.defId);
-        return {
-          x: p.x,
-          y: p.y,
-          code: def?.code ?? '?',
-          color: def?.color ?? '#aaa',
-        };
-      }),
-      view,
-    });
-  }
+      installations: installations.map((p) => ({
+              x: p.x,
+              y: p.y,
+              defId: p.defId,
+              selected: p.id === selectedInstallId,
+            })),
+            view,
+          });
+        }
 
   function buildRoomBadges(model: DrawingModel) {
     const ppm = getPxPerMeter();
@@ -1232,8 +1236,7 @@ export function boot(root: HTMLElement): void {
       a.click();
       URL.revokeObjectURL(a.href);
       statusEl!.textContent = `Opgeslagen in bibliotheek: ${doc.name}`;
-      installPanel.refreshAll();
-    });
+          });
 
     exportPngBtn.addEventListener('click', () => exportPng());
 
@@ -1259,120 +1262,180 @@ export function boot(root: HTMLElement): void {
         activePlanId = doc.id;
         activePlanName = doc.name;
         upsertPlan(doc);
-        persistLocal();
-        installPanel.refreshAll();
-        statusEl!.textContent = `Geladen + in bibliotheek: ${doc.name}`;
-      } catch {
-        statusEl!.textContent = 'Laden mislukt';
-      }
-    });
+                persistLocal();
+                statusEl!.textContent = `Geladen + in bibliotheek: ${doc.name}`;
+              } catch {
+                statusEl!.textContent = 'Laden mislukt';
+              }
+            });
 
     function switchTab(which: 'draw' | 'install'): void {
-      const draw = which === 'draw';
-      tabDraw!.classList.toggle('active', draw);
-      tabInstall!.classList.toggle('active', !draw);
-      tabDraw!.setAttribute('aria-selected', draw ? 'true' : 'false');
-      tabInstall!.setAttribute('aria-selected', draw ? 'false' : 'true');
-      panelDraw!.classList.toggle('active', draw);
-      panelInstall!.classList.toggle('active', !draw);
-      if (draw) {
-        panelDraw!.hidden = false;
-        panelInstall!.hidden = true;
-        layout();
-        paint();
-      } else {
-        panelDraw!.hidden = true;
-        panelInstall!.hidden = false;
-        installPanel.refreshAll();
-      }
-    }
-    tabDraw.addEventListener('click', () => switchTab('draw'));
-    tabInstall.addEventListener('click', () => switchTab('install'));
-
-    const installPanel = bootInstallPanel(root, {
-      getModel: () => controller.model,
-      getPxPerMeter,
-      getInstallations: () => installations,
-      setInstallations: (items) => {
-        installations = items;
-      },
-      openPlan: (plan) => {
-        applyPlanDocument(plan);
-        switchTab('draw');
-        statusEl!.textContent = `Plan geopend: ${plan.name}`;
-      },
-      getActivePlanMeta: () => ({ id: activePlanId, name: activePlanName }),
-      setActivePlanMeta: (id, name) => {
-        activePlanId = id;
-        activePlanName = name;
-      },
-      getSelectedLoopCentroid: () => {
-        const li = controller.selectedLoopIndex();
-        if (li === null) return null;
-        const L = controller.model.loops[li];
-        if (!L?.vertices.length) return null;
-        let x = 0;
-        let y = 0;
-        for (const p of L.vertices) {
-          x += p.x;
-          y += p.y;
+          appMode = which;
+          const draw = which === 'draw';
+          tabDraw!.classList.toggle('active', draw);
+          tabInstall!.classList.toggle('active', !draw);
+          tabDraw!.setAttribute('aria-selected', draw ? 'true' : 'false');
+          tabInstall!.setAttribute('aria-selected', draw ? 'false' : 'true');
+          hudDraw!.classList.toggle('hidden', !draw);
+          hudInstall!.classList.toggle('hidden', draw);
+          controller.enabled = draw;
+          placeToolId = null;
+          selectedInstallId = null;
+          dragInstall = null;
+          electraUi.setActiveTool(null);
+          installDeleteBtn!.disabled = true;
+          if (installStatus) {
+            installStatus.textContent = draw
+              ? ''
+              : 'Kies pictogram · klik op tekening om te plaatsen · sleep om te verplaatsen';
+          }
+          layout();
+          paint();
         }
-        return {
-          x: x / L.vertices.length,
-          y: y / L.vertices.length,
-          loopId: L.id,
-        };
-      },
-      getPlanCentroid: () => {
-        const pts: { x: number; y: number }[] = [];
-        for (const L of controller.model.loops) {
-          for (const p of L.vertices) pts.push(p);
-        }
-        for (const p of controller.model.vertices) pts.push(p);
-        if (!pts.length) return { x: 200, y: 200 };
-        let x = 0;
-        let y = 0;
-        for (const p of pts) {
-          x += p.x;
-          y += p.y;
-        }
-        return { x: x / pts.length, y: y / pts.length };
-      },
-      onChange: () => {
-        paint();
-        persistLocal();
-      },
-    });
+        tabDraw.addEventListener('click', () => switchTab('draw'));
+        tabInstall.addEventListener('click', () => switchTab('install'));
 
-    resetBtn.addEventListener('click', () => {
-      if (popupState) dismissPopup();
-      if (splitState) closeSplitPanel();
-      controller.reset();
-      installations = [];
-      activePlanId = null;
-      activePlanName = '';
-      const nameInput = root.querySelector<HTMLInputElement>('#plan-name');
-      if (nameInput) nameInput.value = '';
-      syncLengthFieldFromSelection();
-      syncAngleFieldFromSelection();
-      syncDoorFieldFromSelection();
-      updateHud(controller.model);
-      paint();
-      installPanel.refreshAll();
-    });
-    pxInput.addEventListener('change', () => {
-      syncLengthFieldFromSelection();
-      updateHud(controller.model);
-      paint();
-    });
-    pxInput.addEventListener('input', () => {
-      syncLengthFieldFromSelection();
-      updateHud(controller.model);
-      paint();
-    });
+        const electraUi = bootElectraPalette(root, {
+                  getActivePlanMeta: () => ({ id: activePlanId, name: activePlanName }),
+                  setActivePlanMeta: (id, name) => {
+                    activePlanId = id;
+                    activePlanName = name;
+                  },
+                  onSelectTool: (defId) => {
+                    placeToolId = defId;
+                    selectedInstallId = null;
+                    installDeleteBtn!.disabled = true;
+                    if (installStatus) {
+                      const def = defId ? getInstallDef(defId) : null;
+                      installStatus.textContent = def
+                        ? `Plaatsen: ${def.labelNl} — klik op de tekening`
+                        : 'Kies pictogram · klik op tekening · sleep om te verplaatsen';
+                    }
+                    paint();
+                  },
+                  onSave: () => {
+                    saveBtn.click();
+                  },
+                });
 
-    wallLengthInput.addEventListener('change', () => applyTypedLength());
-    wallLengthInput.addEventListener('keydown', (e) => {
+        function worldFromEvent(e: PointerEvent): { x: number; y: number } {
+          const rect = canvas!.getBoundingClientRect();
+          const sx = e.clientX - rect.left;
+          const sy = e.clientY - rect.top;
+          return {
+            x: (sx - view.ox) / view.scale,
+            y: (sy - view.oy) / view.scale,
+          };
+        }
+
+        function hitInstall(p: { x: number; y: number }): string | null {
+          const r = INSTALL_HIT_R / Math.max(0.25, view.scale);
+          let best: string | null = null;
+          let bestD = r;
+          for (const it of installations) {
+            const d = Math.hypot(it.x - p.x, it.y - p.y);
+            if (d <= bestD) {
+              bestD = d;
+              best = it.id;
+            }
+          }
+          return best;
+        }
+
+        canvas!.addEventListener('pointerdown', (e) => {
+          if (appMode !== 'install') return;
+          if (e.button !== 0 && e.pointerType === 'mouse') return;
+          const p = worldFromEvent(e);
+          const hit = hitInstall(p);
+          if (hit) {
+            selectedInstallId = hit;
+            const it = installations.find((x) => x.id === hit)!;
+            dragInstall = { id: hit, ox: p.x - it.x, oy: p.y - it.y };
+            placeToolId = null;
+            electraUi.setActiveTool(null);
+            installDeleteBtn!.disabled = false;
+            canvas!.setPointerCapture(e.pointerId);
+            paint();
+            return;
+          }
+          if (placeToolId) {
+            const item: PlacedInstall = {
+              id: newPlaceId(),
+              defId: placeToolId,
+              x: p.x,
+              y: p.y,
+              loopId: null,
+              note: '',
+            };
+            installations = [...installations, item];
+            selectedInstallId = item.id;
+            installDeleteBtn!.disabled = false;
+            persistLocal();
+            paint();
+          }
+        });
+        canvas!.addEventListener('pointermove', (e) => {
+          if (appMode !== 'install' || !dragInstall) return;
+          const p = worldFromEvent(e);
+          installations = installations.map((it) =>
+            it.id === dragInstall!.id
+              ? { ...it, x: p.x - dragInstall!.ox, y: p.y - dragInstall!.oy }
+              : it,
+          );
+          paint();
+        });
+        canvas!.addEventListener('pointerup', (e) => {
+          if (appMode !== 'install') return;
+          if (dragInstall) {
+            dragInstall = null;
+            persistLocal();
+            try {
+              canvas!.releasePointerCapture(e.pointerId);
+            } catch {
+              /* ignore */
+            }
+          }
+        });
+
+        installDeleteBtn!.addEventListener('click', () => {
+          if (!selectedInstallId) return;
+          installations = installations.filter((x) => x.id !== selectedInstallId);
+          selectedInstallId = null;
+          installDeleteBtn!.disabled = true;
+          persistLocal();
+          paint();
+        });
+
+        resetBtn.addEventListener('click', () => {
+          if (popupState) dismissPopup();
+          if (splitState) closeSplitPanel();
+          controller.reset();
+          installations = [];
+          activePlanId = null;
+          activePlanName = '';
+          selectedInstallId = null;
+          placeToolId = null;
+          const nameInput = root.querySelector<HTMLInputElement>('#plan-name');
+          if (nameInput) nameInput.value = '';
+          syncLengthFieldFromSelection();
+          syncAngleFieldFromSelection();
+          syncDoorFieldFromSelection();
+          updateHud(controller.model);
+          paint();
+        });
+        pxInput.addEventListener('change', () => {
+          syncLengthFieldFromSelection();
+          updateHud(controller.model);
+          paint();
+        });
+        pxInput.addEventListener('input', () => {
+          syncLengthFieldFromSelection();
+          updateHud(controller.model);
+          paint();
+        });
+
+        wallLengthInput.addEventListener('change', () => applyTypedLength());
+        wallLengthInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       applyTypedLength();

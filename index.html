@@ -19,17 +19,15 @@
   <body>
     <div id="app">
       <nav class="app-tabs" role="tablist" aria-label="Hoofdsecties">
-        <button type="button" class="app-tab active" id="tab-draw" role="tab" aria-selected="true" data-tab="draw">
+        <button type="button" class="app-tab active" id="tab-draw" role="tab" aria-selected="true">
           Plattegrond
         </button>
-        <button type="button" class="app-tab" id="tab-install" role="tab" aria-selected="false" data-tab="install">
+        <button type="button" class="app-tab" id="tab-install" role="tab" aria-selected="false">
           Installaties
         </button>
       </nav>
 
-      <div id="panel-draw" class="app-panel active">
-      <header class="hud">
-        <!-- Rij 1: identiteit + status + bestand -->
+      <header class="hud" id="hud-draw">
         <div class="hud-row hud-row-main">
           <div class="hud-brand">
             <strong class="logo" id="logo">Wand-m²</strong>
@@ -38,124 +36,87 @@
           <div class="hud-file">
             <div id="lang-picker" class="lang-picker" role="group" aria-label="Language"></div>
             <button type="button" id="undo" class="btn" title="Ongedaan (Ctrl+Z)">↩</button>
-            <button type="button" id="save" class="btn btn-primary" title="Opslaan in bibliotheek + JSON">Opslaan</button>
+            <button type="button" id="save" class="btn btn-primary" title="Opslaan">Opslaan</button>
             <button type="button" id="export-png" class="btn btn-primary" title="Export PNG">PNG</button>
-            <button type="button" id="load" class="btn" title="Laden uit JSON-bestand">Laden</button>
+            <button type="button" id="load" class="btn" title="Laden">Laden</button>
             <input id="load-file" type="file" accept="application/json,.json" class="hidden" />
             <button type="button" id="reset" class="btn btn-danger" title="Alles wissen">Reset</button>
           </div>
         </div>
-
-        <!-- Rij 2: workflow-tools met labels -->
         <div class="hud-row hud-row-tools">
-          <div class="tool-group" data-step="1">
+          <div class="tool-group">
             <span class="tool-label">Muur</span>
             <label class="scale length-field" id="length-field">
               <span id="label-wall">m</span>
-              <input
-                id="wall-length"
-                type="number"
-                min="0.01"
-                step="0.01"
-                inputmode="decimal"
-                placeholder="—"
-                disabled
-                title="Lengte geselecteerde muur"
-              />
+              <input id="wall-length" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="—" disabled />
             </label>
             <label class="scale angle-field" id="angle-field">
               <span id="label-angle">°</span>
-              <input
-                id="corner-angle"
-                type="number"
-                min="1"
-                max="359"
-                step="0.1"
-                inputmode="decimal"
-                placeholder="—"
-                disabled
-                title="Binnenhoek geselecteerde hoek"
-              />
+              <input id="corner-angle" type="number" min="1" max="359" step="0.1" inputmode="decimal" placeholder="—" disabled />
             </label>
-            <button type="button" id="snap-angle" class="btn" disabled title="Hoek naar 45/90/135">45°</button>
+            <button type="button" id="snap-angle" class="btn" disabled>45°</button>
           </div>
-
-          <div class="tool-group" data-step="2">
+          <div class="tool-group">
             <span class="tool-label">Deur</span>
-            <button type="button" id="add-door" class="btn" disabled title="Deur op geselecteerde muur">+ Deur</button>
+            <button type="button" id="add-door" class="btn" disabled>+ Deur</button>
             <label class="scale door-field" id="door-field">
               <span id="label-door">m</span>
-              <input
-                id="door-width"
-                type="number"
-                min="0.3"
-                step="0.05"
-                inputmode="decimal"
-                placeholder="—"
-                disabled
-                title="Deurbreedte"
-              />
+              <input id="door-width" type="number" min="0.3" step="0.05" inputmode="decimal" placeholder="—" disabled />
             </label>
-            <button type="button" id="door-hinge-l" class="btn" disabled title="Scharnier links">L</button>
-            <button type="button" id="door-hinge-r" class="btn" disabled title="Scharnier rechts">R</button>
-            <button type="button" id="door-swing" class="btn" disabled title="Draairichting">↺</button>
-            <button type="button" id="remove-door" class="btn btn-danger" disabled title="Deur weg">×</button>
+            <button type="button" id="door-hinge-l" class="btn" disabled>L</button>
+            <button type="button" id="door-hinge-r" class="btn" disabled>R</button>
+            <button type="button" id="door-swing" class="btn" disabled>↺</button>
+            <button type="button" id="remove-door" class="btn btn-danger" disabled>×</button>
           </div>
-
-          <div class="tool-group tool-group-primary" data-step="3">
+          <div class="tool-group tool-group-primary">
             <span class="tool-label">Kamer</span>
-            <label class="room-type-field" id="room-type-field" title="Type / eisen">
+            <label class="room-type-field" id="room-type-field">
               <select id="room-type" disabled></select>
             </label>
-            <label class="room-name-field" id="room-name-field" title="Ruimtenaam">
-              <input
-                id="room-name"
-                type="text"
-                list="room-name-presets"
-                placeholder="Naam…"
-                disabled
-                autocomplete="off"
-              />
+            <label class="room-name-field" id="room-name-field">
+              <input id="room-name" type="text" list="room-name-presets" placeholder="Naam…" disabled autocomplete="off" />
               <datalist id="room-name-presets"></datalist>
             </label>
-            <button
-              type="button"
-              id="partition-draw"
-              class="btn btn-primary"
-              disabled
-              title="Scheidingswand: klik muur → sleep naar andere muur"
-            >
-              ✂ Scheiding
-            </button>
-            <button
-              type="button"
-              id="split-loop"
-              class="btn"
-              disabled
-              title="Gelijke banen ÷2 / ÷3 / ÷4"
-            >
-              Deel…
-            </button>
-            <button
-              type="button"
-              id="remove-partition"
-              class="btn btn-danger"
-              disabled
-              title="Scheidingswand weg → 1 ruimte"
-            >
-              Weg
-            </button>
+            <button type="button" id="partition-draw" class="btn btn-primary" disabled>✂ Scheiding</button>
+            <button type="button" id="split-loop" class="btn" disabled>Deel…</button>
+            <button type="button" id="remove-partition" class="btn btn-danger" disabled>Weg</button>
           </div>
-
-          <div class="tool-group tool-group-view" data-step="z">
+          <div class="tool-group tool-group-view">
             <span class="tool-label">Zoom</span>
-            <button type="button" id="zoom-out" class="btn" title="Uit">−</button>
-            <button type="button" id="zoom-reset" class="btn" title="Passend">Fit</button>
-            <button type="button" id="zoom-in" class="btn" title="In">+</button>
-            <label class="scale scale-ppm" title="Pixels per meter">
+            <button type="button" id="zoom-out" class="btn">−</button>
+            <button type="button" id="zoom-reset" class="btn">Fit</button>
+            <button type="button" id="zoom-in" class="btn">+</button>
+            <label class="scale scale-ppm">
               <span id="label-ppm">px/m</span>
               <input id="px-per-m" type="number" min="5" max="2000" step="1" value="50" inputmode="numeric" />
             </label>
+          </div>
+        </div>
+      </header>
+
+      <header class="hud hidden" id="hud-install">
+        <div class="hud-row hud-row-main">
+          <div class="hud-brand">
+            <strong class="logo">Installaties · Elektra</strong>
+            <span id="install-status" class="status"
+              >Kies pictogram · klik op tekening om te plaatsen · sleep om te verplaatsen</span
+            >
+          </div>
+          <div class="hud-file">
+            <input id="plan-name" type="text" class="install-input" placeholder="Plannaam…" />
+            <button type="button" id="plan-save-lib" class="btn btn-primary">Opslaan</button>
+            <button type="button" id="install-delete" class="btn btn-danger" disabled title="Onderdeel weg">× Weg</button>
+          </div>
+        </div>
+        <div class="hud-row hud-row-tools">
+          <div class="tool-group tool-group-primary electra-group">
+            <span class="tool-label">Elektra</span>
+            <div id="electra-palette" class="symbol-palette" role="listbox" aria-label="Elektrische onderdelen"></div>
+          </div>
+          <div class="tool-group">
+            <span class="tool-label">Later</span>
+            <button type="button" class="btn" disabled>Water</button>
+            <button type="button" class="btn" disabled>Afvoer</button>
           </div>
         </div>
       </header>
@@ -222,45 +183,6 @@
         </div>
       </main>
       <p class="hint" id="footer-hint"></p>
-      </div><!-- /panel-draw -->
-
-      <div id="panel-install" class="app-panel" hidden>
-        <div class="install-layout">
-          <aside class="install-side">
-            <section class="install-block">
-              <h2 class="install-h">Opgeslagen tekeningen</h2>
-              <div class="install-plan-actions">
-                <input id="plan-name" type="text" placeholder="Naam plan…" class="install-input" />
-                <button type="button" id="plan-save-lib" class="btn btn-primary">In bibliotheek</button>
-              </div>
-              <ul id="plan-library" class="plan-library"></ul>
-              <p class="install-note">Klik een plan om te openen op Plattegrond.</p>
-            </section>
-
-            <section class="install-block">
-              <h2 class="install-h">Categorie</h2>
-              <div class="install-cats" id="install-cats" role="tablist">
-                <button type="button" class="install-cat active" data-cat="electric">Elektra</button>
-                <button type="button" class="install-cat" data-cat="water">Water</button>
-                <button type="button" class="install-cat" data-cat="drain">Afvoer</button>
-              </div>
-              <ul id="install-catalog" class="install-catalog"></ul>
-              <p class="install-note">
-                Kies een component → plaats in geselecteerde kamer (of midden van plan).
-              </p>
-            </section>
-          </aside>
-
-          <section class="install-main">
-            <h2 class="install-h">Geplaatst op dit plan</h2>
-            <p id="install-active-plan" class="install-active-plan">— geen plan —</p>
-            <ul id="install-placed" class="install-placed"></ul>
-            <p class="install-note">
-              Fase 2: categorieën stap voor stap uitwerken. Start: Elektra-catalogus + plaatsen.
-            </p>
-          </section>
-        </div>
-      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
