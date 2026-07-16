@@ -4,14 +4,24 @@ dist
 *.local
 src/app.ts.bak
 .hermes
+.env
+.env.*
+
+# CAD bulk / extracted (keep small curated refs if tracked intentionally)
 refs/cad-symbols/*.dwg
 refs/cad-symbols/*.zip
-refs/cad-symbols/electricalsymbols/
-
-
-refs/cad-symbols/libredwg/
-refs/cad-symbols/*.zip
-refs/cad-symbols/*.dwg
 refs/cad-symbols/*.dxf
 refs/cad-symbols/electricalsymbols/
+refs/cad-symbols/libredwg/
 refs/cad-symbols/fia-extracted/
+
+# Debug / chrome dumps — never commit
+refs/debug/
+scripts/chrome-dump*.mjs
+scripts/diag-boot.mjs
+**/chrome-profile/
+**/chrome-stderr.txt
+**/chrome-ud-*/
+**/dump-dom.html
+**/dump-err.txt
+**/runner.html
